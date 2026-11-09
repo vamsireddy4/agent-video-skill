@@ -1,43 +1,102 @@
-# video-watch
+# /video-watch
 
 **Let any AI agent watch a video, and learn new skills from it.**
 
-Give your AI agent a video link. It sees every frame, hears the audio, and can answer questions
-about the video or turn what the video teaches into a new skill it can reuse.
-
-Works with **Claude Code, Codex, Gemini CLI, Cursor** and other agents. Free, runs on your
-computer, no API keys.
+Give your agent a video link or file. It reads every frame, listens to the audio in about 100
+languages, and can answer questions about the video or turn what the video teaches into a new
+skill it can reuse. Free, runs on your computer, no API keys.
 
 ![How it works](docs/how-it-works.svg)
 
----
+## Choose your app
 
-## 1. Install (one command)
+| Where you use your agent | Start here |
+|---|---|
+| **Claude Code** (terminal, desktop app, VS Code) | [Install for Claude Code](#claude-code) |
+| **Codex** (CLI, desktop app, IDE) | [Install for Codex](#codex) |
+| **Gemini CLI** | [Install for Gemini CLI](#gemini-cli) |
+| **Cursor, GitHub Copilot or another agent** | [Install for other agents](#other-agents) |
+| **Claude chat, ChatGPT, Gemini web, or other browser apps** | [Not supported](#chat-and-browser-apps) |
 
-**Mac / Linux**
+All of them use the same one-command installer. It finds the agents on your computer and installs
+the skill for each one, plus everything the skill needs (no admin password).
+
+### Claude Code
+
+Run this **in your computer's terminal**:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/vamsireddy4/claude-watch/main/install.sh | sh
 ```
 
-**Windows (PowerShell)**
+On Windows, use PowerShell:
 
 ```powershell
 irm https://raw.githubusercontent.com/vamsireddy4/claude-watch/main/install.py | python -
 ```
 
-That's it. It finds your AI agents, installs everything they need (no admin password), and tells
-you when it's ready:
+You'll see this when it's done:
 
 ![Installer output](docs/install.png)
 
-> You only need **Python 3.9+**. Then start a new session in your AI agent.
+Start a new Claude Code session and type `/video-watch`.
 
----
+### Codex
 
-## 2. Use it
+Run the same command as above in your terminal. The skill goes into `~/.agents/skills/video-watch`,
+the shared folder Codex reads. Start a new Codex session and type `$video-watch`, or ask:
+*"Use the video-watch skill on this link"*.
 
-Type one of these in your AI agent:
+### Gemini CLI
+
+Run the same command as above. If you have Gemini CLI installed (a `~/.gemini` folder), the skill
+goes into `~/.gemini/skills/video-watch`. Start a new session and ask: *"Use the video-watch skill
+on this link"*.
+
+### Other agents
+
+Run the same command as above. If your agent isn't detected, choose where to install:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/vamsireddy4/claude-watch/main/install.sh | sh -s -- --agents agents
+```
+
+`agents` installs into `~/.agents/skills/video-watch`, which Copilot, Codex and many other agents
+read. Use `--agents cursor` for Cursor. If your agent reads skills from somewhere else, copy the
+whole `video-watch` folder there. Keep `SKILL.md` and the `scripts/` folder together.
+
+### Chat and browser apps
+
+**Not supported:** Claude chat (claude.ai), ChatGPT, Gemini web and other browser apps. The skill
+has to run programs (ffmpeg, yt-dlp, Whisper) on a computer that can reach video sites. Browser
+apps run code in a cloud sandbox that usually can't reach YouTube and similar sites, and their
+setup doesn't persist. Use a local agent from the table above.
+
+## Try your first video
+
+1. Start a new session in your agent.
+2. Paste this into the message box (use any short public video):
+
+```text
+/video-watch summary https://www.youtube.com/watch?v=YOUR_VIDEO
+```
+
+3. The first time, the agent checks its tools. If anything is missing, it sets it up itself
+   (2-5 minutes, one time).
+
+**Success looks like a summary with timestamps.** Next, try asking a question:
+
+```text
+/video-watch ask https://www.youtube.com/watch?v=YOUR_VIDEO what code is on screen at 2:30?
+```
+
+Then try learning a skill from a tutorial:
+
+```text
+/video-watch https://www.youtube.com/watch?v=A_TUTORIAL
+```
+
+## Commands
 
 | Type this | What happens |
 |---|---|
@@ -45,20 +104,17 @@ Type one of these in your AI agent:
 | `/video-watch ask <link> <question>` | Answers your question about the video |
 | `/video-watch summary <link>` | Gives a summary with timestamps |
 
-Or just ask in your own words: *"Watch this video and tell me what code they wrote at 5:30"*.
+A link can be YouTube, Vimeo, X, Instagram, TikTok, a news site, a direct `.mp4` / `.m3u8`, or a
+file on your computer. You can also just ask in your own words. In Codex, use `$video-watch`.
 
-> Some agents use a different prefix (Codex, for example, uses `$video-watch`).
-
----
-
-## 3. What the AI sees
+## What the AI sees
 
 Here is a 20-second demo video:
 
 ![The demo video](docs/demo-video.jpg)
 
-**Key frames.** Every frame is read, and the important ones are picked for the AI: each new
-slide, new line of code, scene change and moment of action.
+**Key frames.** Every frame is read on your computer, and the important ones go to the AI: each
+new slide, new line of code, scene change and moment of action.
 
 ![Key frames](docs/contact-sheet.jpg)
 
@@ -67,20 +123,19 @@ follow the movement.
 
 ![Motion strip](docs/motion-strip.jpg)
 
-**A timeline it can read.** Pictures, speech, music, sounds and tone, all lined up by time.
+**A timeline it can read.** Pictures, speech, music, sounds and tone, lined up by time.
 
 ![timeline.md](docs/timeline.png)
 
----
+## Learn a skill from a video
 
-## 4. Learn a skill from a video
-
-`/video-watch <link>` watches a tutorial, learns the steps, writes a new skill, tests it, and shows
-you this card, so you know the skill was really created:
+`/video-watch <link>` watches a tutorial from start to end, learns the steps, writes a new skill,
+tests it, and shows you this card, so you know the skill was really created:
 
 ![Skill created card](docs/skill-card.png)
 
-Use the new skill like any other: type `/flask-health-api`, or just ask for the task.
+Use the new skill like any other: type `/flask-health-api`, or just ask for the task. If something
+goes wrong, the agent says **"Skill was NOT created"** and why.
 
 See every skill you have learned from videos:
 
@@ -88,47 +143,112 @@ See every skill you have learned from videos:
 python3 ~/.claude/skills/video-watch/scripts/scaffold_skill.py --list
 ```
 
----
-
-## 5. Any language
+## Languages
 
 The AI listens to the audio, not just captions, in about **100 languages**: Telugu, Hindi, Tamil,
-Kannada, Malayalam, English, Spanish and more. Mixed speech like Tenglish or Hinglish works too.
-It can add an English translation of every line.
+Kannada, Malayalam, English, Spanish and more. The language is detected automatically, and mixed
+speech like Tenglish or Hinglish works too.
 
----
+| Want | Add to your request |
+|---|---|
+| An English translation of every line | "with English translation" (or `--translate`) |
+| A specific language | "the video is in Telugu" (or `--lang te`) |
+| Better accuracy for Indian languages | "use the medium speech model" (or `--whisper-model-other medium`) |
 
-## Update / Uninstall
+## Detail and speed
 
-**Update:** run the install command again.
+| Option | What it does |
+|---|---|
+| *(default)* | Reads every frame, picks up to 40 key frames, makes motion strips, analyses sound |
+| `--quick` | Fastest: skips the every-frame scan |
+| `--start 10:00 --end 12:00` | Only that part of the video |
+| `--max-frames 60` | Lets the AI see more key frames |
+| `--motion-fps 15 --motion-frames 30` | Denser motion strips for very fast action |
+| `--transcript captions` | Captions only, never listens (fastest) |
+| `--no-audio-analysis` | Skips music, sound and tone |
 
-**Uninstall:**
+You can say these in plain words too: *"just look at 10:00 to 12:00"*, *"be quick"*.
+
+<details>
+<summary>All files the skill creates</summary>
+
+| File | What it is |
+|---|---|
+| `timeline.md` | Read first: frames, speech, motion and sounds by time |
+| `frames/` | Key frames, named by time |
+| `motion/` | Motion strips for the fast parts |
+| `sheets/` | Several frames per image |
+| `transcript.txt` | Everything that was said |
+| `transcript_en.txt` | English translation (with `--translate`) |
+| `timeline.json` | Everything, for programs |
+
+</details>
+
+## Updating and troubleshooting
+
+**Update:** run the install command again. It updates the skill for every agent and refreshes
+yt-dlp, which sites like YouTube need.
+
+**Check your setup:** ask the agent *"run the video-watch check"*, or run:
+
+```bash
+python3 ~/.claude/skills/video-watch/scripts/video_watch.py --check
+```
+
+| Problem | What to do |
+|---|---|
+| `/video-watch` doesn't appear | Start a new agent session. Still missing? Run the install command again and check the folder it prints. |
+| YouTube says "Sign in to confirm" or 403 | Run the install command again to update yt-dlp. If it still fails, install [Deno](https://deno.com) or Node.js. |
+| A video needs your login | Ask the agent to use your browser login (`--cookies-from-browser chrome`). Only for your own account. |
+| "No frames could be extracted" | The video is DRM-protected (Netflix, Prime Video, Hotstar), or the site blocks streaming. Try a direct link or a downloaded file. |
+| No speech in the result | Run the check. On first use the speech models download from Hugging Face, which needs internet. |
+| Wrong language detected | Tell it the language: *"the video is in Telugu"* (`--lang te`). |
+| Too slow on a long video | Use `--quick`, or only part of the video with `--start` / `--end`. |
+| Python not found | Install Python 3.9+ from [python.org](https://www.python.org/downloads/) and run the installer again. |
+| "Skill was NOT created" | Read the reason the agent gives. Usually a missing tool or a video it couldn't open. |
+
+## Uninstall
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/vamsireddy4/claude-watch/main/install.sh | sh -s -- --uninstall
 ```
 
-Skills you learned from videos are kept. Delete them yourself if you don't need them.
+This removes the skill from every agent and the `~/.video-watch` environment. Skills you learned
+from videos are kept; delete them yourself if you don't need them. Speech models stay in
+`~/.cache/huggingface` until you delete them.
 
----
+## Data and privacy
 
-## Good to know
-
-- **The AI looks at the best frames, not all of them.** Every frame is measured on your computer,
-  but sending thousands of images to an AI would be slow and costly.
-- **Music, sound and tone are hints.** "Likely music" or "[loud, fast]" come from measuring the
-  audio, so treat them as clues, not facts.
-- **Netflix, Prime Video, Hotstar and other DRM videos can't be watched.**
-- **YouTube not working?** Run the install command again to update. If it still fails, install
-  [Deno](https://deno.com) or Node.js.
-- Respect each site's rules and the creator's rights.
-
----
+- **On your computer:** the video is streamed and read locally. It is never saved in full, and
+  nothing is uploaded to a video-analysis service. No API keys are used.
+- **Your agent's AI** sees the selected frames and the transcript, the same way it sees any file
+  you share with it.
+- **First run** downloads Python packages (PyPI) and speech models (Hugging Face).
+- **Output** goes to a `video-watch-<title>` folder where the agent is working. Delete it when you
+  are done.
+- **Limits:** the AI looks at the best frames, not all of them. Music, sound and tone labels come
+  from measuring the audio, so they are hints, not facts. Respect each site's rules and the
+  creator's rights.
 
 <details>
-<summary><b>Install with git instead</b></summary>
+<summary>How it works inside</summary>
 
-Clone into your agent's skills folder:
+1. **Find the video.** Links go through `yt-dlp`, which finds the real stream. Nothing is
+   downloaded; the video is streamed.
+2. **Read every frame.** One fast pass reads every frame at low resolution and measures motion and
+   changes (about 15,000 frames of a 10-minute video in under 20 seconds).
+3. **Pick key frames.** Full-size frames are taken at every new slide, code line, scene change and
+   motion peak, plus evenly spread frames so nothing long is missed. Fast parts become motion
+   strips.
+4. **Listen.** Creator captions are used if they exist; otherwise Whisper listens and detects the
+   language. Loudness, pitch and speed give tone hints; silence, music and noise are marked.
+5. **Timeline.** Everything is lined up by time in `timeline.md`. Pictures and sound are processed
+   at the same time to keep it fast.
+
+</details>
+
+<details>
+<summary>Install with git instead</summary>
 
 ```bash
 git clone https://github.com/vamsireddy4/claude-watch ~/.claude/skills/video-watch
@@ -141,72 +261,9 @@ git clone https://github.com/vamsireddy4/claude-watch ~/.claude/skills/video-wat
 | Gemini CLI | `~/.gemini/skills/video-watch` |
 | Cursor | `~/.cursor/skills/video-watch` |
 
-Setup then happens automatically the first time you use `/video-watch`. You can also run
-`python3 install.py` inside the folder. Installer options: `--agents claude,codex`,
-`--no-models` (skip downloading speech models now), `--uninstall`.
-
-</details>
-
-<details>
-<summary><b>Run it yourself (advanced options)</b></summary>
-
-```bash
-python3 scripts/video_watch.py "<link or file>" -o out
-```
-
-| Option | What it does |
-|---|---|
-| `--start 10:00 --end 12:00` | Only that part of the video |
-| `--quick` | Faster: skip reading every frame |
-| `--max-frames 60` | Let the AI see more key frames (default 40) |
-| `--motion-fps 15 --motion-frames 30` | Denser motion strips for very fast action |
-| `--transcript audio` | Always listen to the audio (best for non-English) |
-| `--translate` | Add an English translation of the speech |
-| `--lang te` | Tell it the spoken language |
-| `--whisper-model-other medium` | More accurate (slower) listening for non-English |
-| `--transcript captions` | Captions only, never listen (fastest) |
-| `--no-audio-analysis` | Skip music, sound and tone |
-| `--cookies-from-browser chrome` | For videos that need your login |
-| `--check` | Check that everything is installed |
-
-What you get in `out/`:
-
-| File | What it is |
-|---|---|
-| `timeline.md` | Read this first: frames, speech, motion and sounds by time |
-| `frames/` | Key frames, named by time |
-| `motion/` | Motion strips for the fast parts |
-| `sheets/` | Several frames per image |
-| `transcript.txt` | Everything that was said |
-| `transcript_en.txt` | English translation (with `--translate`) |
-| `timeline.json` | Everything, for programs |
-
-Learn-a-skill tools:
-
-```bash
-python3 scripts/scaffold_skill.py my-skill --description "What it does. Use when ..." --agent claude
-python3 scripts/scaffold_skill.py --validate <skill folder>
-python3 scripts/scaffold_skill.py --card <skill folder>
-python3 scripts/scaffold_skill.py --list
-```
-
-</details>
-
-<details>
-<summary><b>How it works inside</b></summary>
-
-1. **Find the video.** Links go through `yt-dlp`, which finds the real video stream. Nothing is
-   downloaded; the video is streamed.
-2. **Read every frame.** One fast pass reads every frame at low resolution and measures motion and
-   changes (about 15,000 frames of a 10-minute video in under 20 seconds).
-3. **Pick key frames.** Full-size frames are taken at every new slide, code line, scene change and
-   motion peak, plus evenly spread frames so nothing long is missed. Fast parts become motion
-   strips.
-4. **Listen.** Captions are used if the creator added them; otherwise Whisper listens to the audio
-   and detects the language. Loudness, pitch and speed give tone hints; silence, music and noise
-   are marked.
-5. **Timeline.** Everything is lined up by time in `timeline.md` for the AI to read. Pictures and
-   sound are processed at the same time to keep it fast.
+Git doesn't run code on clone, so setup happens the first time you use `/video-watch`, or run
+`python3 install.py` inside the folder. Installer options: `--agents claude,codex`, `--no-models`,
+`--deps-only`, `--uninstall`.
 
 </details>
 
