@@ -12,6 +12,12 @@ Create:
 
 Validate:
     python3 scaffold_skill.py --validate ~/.claude/skills/docker-multistage-deploy
+
+Show the user what was created (read from disk):
+    python3 scaffold_skill.py --card ~/.claude/skills/docker-multistage-deploy
+
+List every skill learned from a video:
+    python3 scaffold_skill.py --list
 """
 
 from __future__ import annotations
@@ -20,6 +26,7 @@ import argparse
 import datetime as dt
 import re
 import sys
+import textwrap
 from pathlib import Path
 
 # Where each agent looks for skills (user-level, and project-level with --project).
@@ -139,13 +146,12 @@ def parse_frontmatter(text: str) -> dict | None:
     return data
 
 
-def validate_folder(folder: Path) -> int:
-    folder = folder.expanduser().resolve()
-    problems, warnings = [], []
+def check_folder(folder: Path) -> tuple[list[str], list[str], list[str], dict, str]:
+    """Return (problems, warnings, tips, frontmatter, text) for a skill folder."""
+    problems, warnings, tips = [], [], []
     skill_md = folder / "SKILL.md"
     if not skill_md.exists():
-        print(f"FAIL: {skill_md} not found")
-        return 1
+        return [f"{skill_md} not found"], [], [], {}, ""
     text = skill_md.read_text(encoding="utf-8")
     fm = parse_frontmatter(text)
     if fm is None:
@@ -168,10 +174,14 @@ def validate_folder(folder: Path) -> int:
     for ref in re.findall(r"(?:scripts|references)/[A-Za-z0-9_.\-/]+", body):
         if not (folder / ref.rstrip(".,)")).exists():
             warnings.append(f"SKILL.md mentions {ref} but that file does not exist")
-    tips = []
     if "## Source" not in text:
         tips.append("no '## Source' section; if this was learned from a video, add the link and credit the creator")
+    return problems, warnings, tips, fm, text
 
+
+def validate_folder(folder: Path) -> int:
+    folder = folder.expanduser().resolve()
+    problems, warnings, tips, _, _ = check_folder(folder)
     for p in problems:
         print(f"FAIL: {p}")
     for w in warnings:
@@ -181,6 +191,103 @@ def validate_folder(folder: Path) -> int:
     if not problems:
         print(f"OK: {folder.name} is a valid skill" + (" (see warnings)" if warnings else ""))
     return 1 if problems else 0
+
+
+def _section(text: str, heading: str) -> str:
+    m = re.search(rf"^## {re.escape(heading)}\s*\n(.*?)(?=^## |\Z)", text, re.S | re.M)
+    return m.group(1).strip() if m else ""
+
+
+def _agent_for(folder: Path) -> str:
+    parts = folder.as_posix()
+    for key, marker in (("Claude Code", "/.claude/"), ("Gemini CLI", "/.gemini/"), ("Cursor", "/.cursor/"),
+                        ("GitHub Copilot", "/.github/"), ("Codex / shared agents folder", "/.agents/"),
+                        ("Codex", "/.codex/")):
+        if marker in parts + "/":
+            return key
+    return "custom folder (copy it into your agent's skills folder to use it)"
+
+
+def show_card(folder: Path) -> int:
+    """Print a confirmation card read from disk, so the user can see the skill really exists."""
+    folder = folder.expanduser().resolve()
+    if not (folder / "SKILL.md").exists():
+        print("=" * 64)
+        print("SKILL NOT CREATED")
+        print(f"No SKILL.md found at {folder}")
+        print("=" * 64)
+        return 1
+    problems, warnings, _, fm, text = check_folder(folder)
+    name = fm.get("name", folder.name)
+    status = "VALID" if not problems else "HAS PROBLEMS: " + "; ".join(problems)
+    if not problems and warnings:
+        status += " (warnings: " + "; ".join(warnings) + ")"
+    src = re.search(r"Learned from:\s*(.+)", text)
+    learned_on = re.search(r"Learned on:\s*([0-9-]+)", text)
+    not_verified = _section(text, "Not verified")
+    skip = {"__pycache__", "node_modules", "venv"}
+    files = []
+    for f in sorted(folder.rglob("*")):
+        rel = f.relative_to(folder)
+        if not f.is_file() or any(part.startswith(".") or part in skip for part in rel.parts):
+            continue
+        files.append(f"    {rel.as_posix()}  ({f.stat().st_size:,} bytes)")
+    if len(files) > 25:
+        files = files[:25] + [f"    ... and {len(files) - 25} more"]
+    home = str(Path.home())
+    shown_path = str(folder).replace(home, "~", 1) if str(folder).startswith(home) else str(folder)
+
+    bar = "=" * 64
+    print(bar)
+    print(f"SKILL CREATED: {name}")
+    print(bar)
+    print(f"Saved at     : {shown_path}")
+    print(f"For agent    : {_agent_for(folder)}")
+    print(f"Status       : {status}")
+    if src:
+        print(f"Learned from : {src.group(1).strip()}")
+    if learned_on:
+        print(f"Learned on   : {learned_on.group(1)}")
+    print("What it does :")
+    for line in textwrap.wrap(fm.get("description", ""), 72):
+        print("    " + line)
+    print("Files:")
+    print("\n".join(files) if files else "    (none)")
+    print("How to use it:")
+    print(f"    /{name}            (in Claude Code; other tools may use another prefix, e.g. ${name})")
+    print("    or just ask for the task in your own words; the agent picks the skill from its description")
+    print("    (start a new agent session first if the skill does not show up)")
+    if not_verified and "TODO" not in not_verified:
+        print("Not verified:")
+        for line in not_verified.splitlines():
+            if line.strip():
+                print("    " + line.strip())
+    print(bar)
+    return 0 if not problems else 1
+
+
+def list_learned(extra_dirs: list[str] | None) -> int:
+    """List skills that were learned from videos (they carry a 'Learned from:' line)."""
+    roots = {p[0] for p in AGENT_DIRS.values()} | {p[1].resolve() for p in AGENT_DIRS.values()}
+    roots |= {Path(d).expanduser().resolve() for d in (extra_dirs or [])}
+    found = []
+    for root in sorted(roots, key=str):
+        if not root.is_dir():
+            continue
+        for skill_md in sorted(root.glob("*/SKILL.md")):
+            text = skill_md.read_text(encoding="utf-8", errors="ignore")
+            m = re.search(r"Learned from:\s*(.+)", text)
+            if m:
+                d = re.search(r"Learned on:\s*([0-9-]+)", text)
+                found.append((skill_md.parent, m.group(1).strip(), d.group(1) if d else "?"))
+    if not found:
+        print("No skills learned from videos were found.")
+        return 0
+    print(f"{len(found)} skill(s) learned from videos:")
+    for folder, src, day in found:
+        print(f"- {folder.name}  [{day}]  {folder}")
+        print(f"    from {src}")
+    return 0
 
 
 def create(args) -> int:
@@ -221,6 +328,7 @@ def create(args) -> int:
     print(f"Created {folder}")
     print("Next: fill in the TODOs in SKILL.md, add scripts/, then run:")
     print(f"  python3 {Path(__file__).resolve()} --validate {folder}")
+    print(f"  python3 {Path(__file__).resolve()} --card {folder}     # show the user the result")
     return 0
 
 
@@ -240,10 +348,17 @@ def main() -> None:
     ap.add_argument("--extra-sources", nargs="*", help="Other videos or pages used")
     ap.add_argument("--force", action="store_true", help="Overwrite SKILL.md if the folder exists")
     ap.add_argument("--validate", metavar="FOLDER", help="Check an existing skill folder and exit")
+    ap.add_argument("--card", metavar="FOLDER", help="Print a 'skill created' card for a skill folder and exit")
+    ap.add_argument("--list", action="store_true", help="List skills learned from videos in all agent folders")
+    ap.add_argument("--also", nargs="*", help="Extra folders to search with --list")
     args = ap.parse_args()
 
     if args.validate:
         sys.exit(validate_folder(Path(args.validate)))
+    if args.card:
+        sys.exit(show_card(Path(args.card)))
+    if args.list:
+        sys.exit(list_learned(args.also))
     if not args.name or not args.description:
         ap.error("creating a skill needs a name and --description (or use --validate FOLDER)")
     sys.exit(create(args))
