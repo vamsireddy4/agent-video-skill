@@ -13,6 +13,10 @@ The output is a new skill folder that works in any agent supporting the Agent Sk
 └── references/       longer material the skill points to (optional)
 ```
 
+Started with `/video-watch learn <link>`: run every step below without waiting for approval
+between them. Use the skill name and `--agent` from the command if given; otherwise choose a short
+task name and the agent you are running in (see "Commands" in SKILL.md).
+
 ## Step 1: Agree on the goal (one short question if unclear)
 
 Before watching, know what the skill is for. "Make a skill from this video" can mean the whole
