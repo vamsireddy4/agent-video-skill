@@ -32,7 +32,11 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import analysis as AN  # noqa: E402  (every-frame motion, sounds and tone)
 
 DIRECT_MEDIA_EXT = (".mp4", ".m4v", ".mov", ".webm", ".mkv", ".avi", ".m3u8", ".mpd", ".ts", ".flv", ".ogv")
 FFMPEG_NET_OPTS = ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5"]
@@ -168,6 +172,11 @@ def check_setup() -> int:
             wh = "openai-whisper"
         except ImportError:
             wh = None
+    try:
+        import numpy
+        npv = numpy.__version__
+    except ImportError:
+        npv = None
     js = shutil.which("deno") or shutil.which("node") or shutil.which("bun")
     rows = [
         ("ffmpeg", ff, True, "needed to read any video"),
@@ -175,6 +184,7 @@ def check_setup() -> int:
         ("yt-dlp", ytv, True, "needed for web pages (YouTube, Vimeo, X, ...)"),
         ("Pillow", pil, False, "contact sheets and duplicate-frame removal"),
         ("Whisper", wh, False, "listening to the audio in ~100 languages"),
+        ("numpy", npv, False, "music, sound and tone analysis"),
         ("JS runtime", js, False, "recent yt-dlp may need deno or node for YouTube"),
     ]
     print(f"video-watch setup check (Python {sys.version.split()[0]} at {sys.executable})")
@@ -436,22 +446,30 @@ def thin_evenly(frames: list[dict], k: int) -> list[dict]:
     return kept
 
 
-def drop_near_duplicates(frames: list[dict], max_diff: float = 2.5) -> list[dict]:
-    """Remove frames that look almost identical to the previous kept one (needs Pillow)."""
+def drop_near_duplicates(frames: list[dict], changed_share: float = 0.004,
+                         keep_times: set[float] | None = None) -> list[dict]:
+    """Remove frames that look the same as the previous kept one (needs Pillow).
+    'The same' means fewer than 0.4% of pixels changed clearly, so a changed line of text, a
+    new code line or a small moving object still counts as different. Frames whose time is in
+    keep_times (motion peaks) are never removed."""
     try:
-        from PIL import Image, ImageChops, ImageStat
+        from PIL import Image, ImageChops
     except ImportError:
         return frames
+    keep_times = keep_times or set()
     kept, prev = [], None
     for fr in frames:
         try:
-            img = Image.open(fr["file"]).convert("RGB").resize((64, 36))
+            img = Image.open(fr["file"]).convert("RGB").resize((192, 108))
         except Exception:
             kept.append(fr)
             continue
-        if prev is not None:
-            diff = sum(ImageStat.Stat(ImageChops.difference(img, prev)).mean) / 3
-            if diff < max_diff:
+        if prev is not None and round(fr["t"], 2) not in keep_times:
+            diff = ImageChops.difference(img, prev)
+            r, g, b = diff.split()
+            mx = ImageChops.lighter(ImageChops.lighter(r, g), b)
+            changed = sum(mx.point(lambda v: 255 if v > 28 else 0).histogram()[255:]) / (192 * 108)
+            if changed < changed_share:
                 fr["file"].unlink(missing_ok=True)
                 continue
         kept.append(fr)
@@ -653,7 +671,8 @@ def _segs_from(it, offset: float) -> list[dict]:
     return out
 
 
-def whisper_transcribe(s: Source, args, work: Path, start: float, end: float | None) -> dict:
+def whisper_transcribe(s: Source, args, work: Path, start: float, end: float | None,
+                       wav: Path | None = None) -> dict:
     """Listen to the audio with Whisper. Detects the spoken language automatically
     (about 100 languages) unless --lang is given. Returns a dict with segs, how, lang,
     lang_prob and (with --translate) segs_en."""
@@ -663,7 +682,11 @@ def whisper_transcribe(s: Source, args, work: Path, start: float, end: float | N
         log("Whisper is not installed, so the audio cannot be listened to. "
             "Install it with: pip install faster-whisper")
         return result
-    wav = stream_audio(s, args, work, start, end)
+    own_wav = wav is None
+    if own_wav and getattr(args, "_audio_failed", False):
+        return result
+    if own_wav:
+        wav = stream_audio(s, args, work, start, end)
     if wav is None:
         return result
 
@@ -682,7 +705,8 @@ def whisper_transcribe(s: Source, args, work: Path, start: float, end: float | N
             else:
                 size = wanted
             model = load(size)
-            it, info = model.transcribe(str(wav), language=lang, vad_filter=True)
+            # suppress_tokens=[] lets Whisper write sound cues such as [Music] or (laughs)
+            it, info = model.transcribe(str(wav), language=lang, vad_filter=True, suppress_tokens=[])
             prob = None
             if lang is None:
                 lang = info.language
@@ -692,7 +716,7 @@ def whisper_transcribe(s: Source, args, work: Path, start: float, end: float | N
                 # Small models are weak outside English; use a bigger one for other languages.
                 size = args.whisper_model_other
                 model = load(size)
-                it, info = model.transcribe(str(wav), language=lang, vad_filter=True)
+                it, info = model.transcribe(str(wav), language=lang, vad_filter=True, suppress_tokens=[])
             log(f"Transcribing speech in '{lang}' with Whisper {size}...")
             result["segs"] = _segs_from(it, start)
             if args.translate and lang != "en":
@@ -735,11 +759,13 @@ def whisper_transcribe(s: Source, args, work: Path, start: float, end: float | N
         log(f"Whisper failed ({type(e).__name__}: {e}).")
         result["segs"], result["segs_en"] = [], []
     finally:
-        wav.unlink(missing_ok=True)
+        if own_wav:
+            wav.unlink(missing_ok=True)
     return result
 
 
-def get_transcript(s: Source, args, work: Path, start: float, end: float | None) -> dict:
+def get_transcript(s: Source, args, work: Path, start: float, end: float | None,
+                   wav: Path | None = None) -> dict:
     """Pick the speech source.
 
     auto     : creator-uploaded captions -> subtitles inside the file -> LISTEN to the audio
@@ -765,7 +791,7 @@ def get_transcript(s: Source, args, work: Path, start: float, end: float | None)
         if segs:
             res = from_caps(segs, how, lang)
     if res is None and mode in ("auto", "audio"):
-        w = whisper_transcribe(s, args, work, start, end)
+        w = whisper_transcribe(s, args, work, start, end, wav)
         if w["segs"]:
             res = w
     if res is None and mode in ("auto", "captions", "audio"):
@@ -786,6 +812,81 @@ def get_transcript(s: Source, args, work: Path, start: float, end: float | None)
     keep = lambda xs: [x for x in xs if x["end"] >= start and (end is None or x["start"] <= end)]  # noqa: E731
     res["segs"], res["segs_en"] = keep(res["segs"]), keep(res["segs_en"])
     return res
+
+
+# --------------------------------------------------------------------------- #
+# 3b. Smart frames (every frame read) and the audio pipeline
+# --------------------------------------------------------------------------- #
+
+def smart_frames(s: Source, args, start: float, end: float, frames_dir: Path, out: Path) -> dict:
+    """Read every frame once at low resolution, then grab full-size frames only where it matters:
+    scene changes, the peak of each fast-motion stretch, and enough evenly spread frames to leave
+    no long blind gap. Fast-motion stretches also get a motion strip (a burst of frames)."""
+    scan = AN.scan_every_frame(FFMPEG, s.ffmpeg_input(s.video_url), start, end, out, args.timeout, log)
+    if scan["frames"] < 2:
+        return {"scan": scan, "frames": [], "segments": [], "activity": [], "threshold": 0.0}
+    segs, thr = AN.motion_segments(scan, max_segments=args.max_strips)
+    log(f"Read {scan['frames']} frames at {scan['fps']} fps; fast-motion stretches: {len(segs)}.")
+    span = end - start
+    peaks = [sg["peak_t"] for sg in segs]
+    changes = AN.scene_change_times(scan, args.scene_threshold) + AN.content_change_times(scan)
+    cand = sorted({round(t, 2) for t in [scan["t"][0]] + changes + peaks})
+    merged: list[float] = []
+    for t in cand:                         # drop candidates closer than 0.5 s
+        if not merged or t - merged[-1] >= 0.5 or t in peaks:
+            merged.append(t)
+    cand = merged
+    if len(cand) > args.max_frames:
+        rest = [t for t in cand if t not in peaks]
+        keep_n = max(1, args.max_frames - len(peaks))
+        step = len(rest) / keep_n
+        cand = sorted(set(peaks + [rest[int(i * step)] for i in range(keep_n)]))
+    max_gap = max(8.0, span / max(1, args.max_frames) * 1.5)
+    while len(cand) < args.max_frames:
+        pts = [start] + cand + [end]
+        gap, i = max((pts[k + 1] - pts[k], k) for k in range(len(pts) - 1))
+        if gap <= max_gap and len(cand) >= args.min_frames:
+            break
+        if gap < 1.0:
+            break
+        cand = sorted(cand + [round(pts[i] + gap / 2, 2)])
+    frames = frames_by_interval(s, cand, frames_dir, args.width, args.workers)
+    frames = drop_near_duplicates(frames, keep_times={round(p, 2) for p in peaks})
+
+    if segs:
+        motion_dir = out / "motion"
+        shutil.rmtree(motion_dir, ignore_errors=True)
+        motion_dir.mkdir(parents=True, exist_ok=True)
+        log(f"Making {len(segs)} motion strip(s) for the fast parts...")
+        for i, sg in enumerate(segs, 1):
+            burst = AN.burst_frames(FFMPEG, s.ffmpeg_input(s.video_url), sg, motion_dir, i,
+                                    fps=args.motion_fps, max_frames=args.motion_frames)
+            name = f"motion_{i:02d}_{fmt_ts(sg['start']).replace(':', 'm')}-{fmt_ts(sg['end']).replace(':', 'm')}.jpg"
+            strip = AN.make_motion_strip(burst, sg, motion_dir / name)
+            if strip:
+                sg["strip"] = strip
+            sg["burst_frames"] = len(burst)
+    activity = AN.activity_by_window(scan, window=max(5.0, round(span / 40)))
+    return {"scan": scan, "frames": frames, "segments": segs, "activity": activity, "threshold": thr}
+
+
+def audio_pipeline(s: Source, args, out: Path, start: float, end: float | None) -> tuple[dict, list[dict]]:
+    """Stream the audio once, then: transcript (captions or Whisper), sound events and tone cues."""
+    need_wav = not args.no_audio_analysis or args.transcript in ("auto", "audio", "whisper")
+    wav = stream_audio(s, args, out, start, end) if need_wav else None
+    if need_wav and wav is None:
+        args._audio_failed = True       # do not try to stream it a second time for Whisper
+    try:
+        tr = get_transcript(s, args, out, start, end, wav)
+        events = AN.split_sound_tags(tr["segs"])
+        if wav is not None and not args.no_audio_analysis:
+            info = AN.analyze_audio(wav, start, tr["segs"], log=log)
+            events += info.get("events", [])
+        events.sort(key=lambda e: e["start"])
+        return tr, events
+    finally:
+        if wav is not None:
+            wav.unlink(missing_ok=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -854,8 +955,12 @@ def build_timeline(frames: list[dict], segs: list[dict], start: float, end: floa
     return items
 
 
-def write_outputs(out: Path, s: Source, frames, tr: dict, sheets, start, end, args) -> dict:
+def write_outputs(out: Path, s: Source, frames, tr: dict, sheets, start, end, args,
+                  vis: dict | None = None, events: list[dict] | None = None, timings: dict | None = None) -> dict:
     segs, how, segs_en = tr["segs"], tr["how"], tr["segs_en"]
+    vis = vis or {}
+    events = events or []
+    msegs = vis.get("segments", [])
     timeline = build_timeline(frames, segs, start, end, segs_en)
     rel = lambda p: str(Path(p).relative_to(out)) if p else None  # noqa: E731
 
@@ -865,7 +970,14 @@ def write_outputs(out: Path, s: Source, frames, tr: dict, sheets, start, end, ar
         md.append(f"- Channel / uploader: {s.uploader}")
     md.append(f"- Duration: {fmt_ts(s.duration) if s.duration else 'unknown'}"
               + (f" (covered {fmt_ts(start)}–{fmt_ts(end)})" if args.start or args.end else ""))
-    md.append(f"- Frames: {len(frames)} ({args.mode_used}); contact sheets: {len(sheets)}")
+    scan = vis.get("scan")
+    if scan and scan.get("frames"):
+        md.append(f"- Every frame read: {scan['frames']} frames at {scan['fps']} fps (motion and scene changes measured locally)")
+    md.append(f"- Key frames to look at: {len(frames)} ({args.mode_used}); contact sheets: {len(sheets)}")
+    if msegs:
+        md.append(f"- Fast motion: {len(msegs)} stretch(es), each with a motion strip in `motion/`")
+    if events:
+        md.append(f"- Sounds: {len(events)} event(s) (music, noise, silence, sudden sounds) - see 'Sounds and music'")
     md.append(f"- Speech: {how} ({len(segs)} segments)")
     if tr.get("lang"):
         md.append(f"- Spoken language: {tr['lang']}" + (f" (detected, {tr['lang_prob']:.0%} sure)" if tr.get("lang_prob") else ""))
@@ -873,8 +985,23 @@ def write_outputs(out: Path, s: Source, frames, tr: dict, sheets, start, end, ar
         md.append("- English translation of the speech: included (lines marked EN)")
     md.append("")
     md.append("How to read this: each block is one key frame (open the image file to see it) followed by "
-              "what was said while that frame was on screen. Frames are snapshots, not continuous video, "
-              "so fast actions between two frames can be missed.")
+              "what was said while that frame was on screen, with tone cues in brackets. Every frame was "
+              "scanned for motion, so fast action is listed under 'Fast motion' with a strip image that "
+              "shows it frame by frame. Tone cues come from loudness, pitch and speed; they are hints, "
+              "not a judgement of emotion.")
+    if vis.get("activity"):
+        md += ["", "## Activity over time", "",
+               " · ".join(f"{fmt_ts(a['start'])} {a['label']}" for a in vis["activity"])]
+    if msegs:
+        md += ["", "## Fast motion", ""]
+        for sg in msegs:
+            md.append(f"- {fmt_ts(sg['start'])}–{fmt_ts(sg['end'])} {sg['level']} (peak at {fmt_ts(sg['peak_t'])})"
+                      + (f": `{rel(sg['strip'])}`" if sg.get("strip") else ""))
+    if events:
+        md += ["", "## Sounds and music", ""]
+        for e in events:
+            md.append(f"- {fmt_ts(e['start'])}–{fmt_ts(e['end'])} {e['type']}"
+                      + (f" ({e['level_db']} dB)" if "level_db" in e else ""))
     if s.chapters:
         md += ["", "## Chapters", ""]
         md += [f"- {fmt_ts(c.get('start_time', 0))} {c.get('title', '')}" for c in s.chapters]
@@ -884,9 +1011,19 @@ def write_outputs(out: Path, s: Source, frames, tr: dict, sheets, start, end, ar
     for it in timeline:
         head = f"### [{fmt_ts(it['t'])}]"
         md.append(head + (f" frame: `{rel(it['frame'])}`" if it["frame"] else " (no frames)"))
+        last = it is timeline[-1]
+        inside = lambda x: it["t"] <= x and (x < it["until"] or last)  # noqa: E731
+        for sg in msegs:
+            if inside(sg["peak_t"]):
+                md.append(f"- MOTION {fmt_ts(sg['start'])}–{fmt_ts(sg['end'])} {sg['level']}"
+                          + (f" → `{rel(sg['strip'])}`" if sg.get("strip") else ""))
+        for e in events:
+            if (inside(e["start"]) or (it is timeline[0] and e["start"] < it["t"])) and e["type"] != "silence":
+                md.append(f"- SOUND {fmt_ts(e['start'])}–{fmt_ts(e['end'])} {e['type']}")
         if it["speech"]:
             for sg in it["speech"]:
-                md.append(f"- {fmt_ts(sg['start'])} – {sg['text']}")
+                tone = f"  [{', '.join(sg['tone'])}]" if sg.get("tone") else ""
+                md.append(f"- {fmt_ts(sg['start'])} – {sg['text']}{tone}")
         else:
             md.append("- (no speech)")
         for sg in it.get("speech_en", []):
@@ -909,7 +1046,13 @@ def write_outputs(out: Path, s: Source, frames, tr: dict, sheets, start, end, ar
         "frame_mode": args.mode_used, "speech_source": how,
         "speech_language": tr.get("lang") or None, "speech_language_probability": tr.get("lang_prob"),
         "chapters": s.chapters, "description": s.description,
+        "frames_read": (scan or {}).get("frames"), "source_fps": (scan or {}).get("fps"),
         "frames": [{"t": f["t"], "time": fmt_ts(f["t"]), "file": rel(f["file"])} for f in frames],
+        "fast_motion": [{k: (rel(v) if k == "strip" else v) for k, v in sg.items()} for sg in msegs],
+        "motion_threshold": vis.get("threshold"),
+        "activity": vis.get("activity", []),
+        "sound_events": events,
+        "timings_seconds": timings or {},
         "contact_sheets": [rel(p) for p in sheets],
         "transcript": segs,
         "transcript_en": segs_en,
@@ -932,9 +1075,17 @@ def main() -> None:
     ap.add_argument("source", nargs="?", help="Video page URL, direct .mp4/.m3u8 URL, or local file path")
     ap.add_argument("--check", action="store_true", help="Check that everything needed is installed, then exit")
     ap.add_argument("-o", "--out", default=None, help="Output folder (default: ./video-watch-<title>)")
-    ap.add_argument("--mode", choices=["auto", "scene", "interval"], default="auto",
-                    help="scene = keep frames where the picture changes; interval = one frame every N seconds; "
-                         "auto = scene for videos up to 20 min, interval for longer")
+    ap.add_argument("--mode", choices=["auto", "smart", "scene", "interval"], default="auto",
+                    help="smart (auto) = read EVERY frame for motion and scene changes, then pick key frames and "
+                         "make motion strips for fast action; scene = keep frames where the picture changes; "
+                         "interval = one frame every N seconds")
+    ap.add_argument("--quick", action="store_true",
+                    help="Skip the every-frame scan (fastest; scene mode up to 20 min, interval for longer)")
+    ap.add_argument("--max-strips", type=int, default=6, help="Most fast-motion strips to make (default 6)")
+    ap.add_argument("--motion-fps", type=float, default=8.0, help="Frames per second inside a motion strip (default 8)")
+    ap.add_argument("--motion-frames", type=int, default=18, help="Most frames per motion strip (default 18)")
+    ap.add_argument("--no-audio-analysis", action="store_true",
+                    help="Skip music, sound and tone analysis (speech transcript only)")
     ap.add_argument("--interval", type=float, default=None, help="Seconds between frames in interval mode")
     ap.add_argument("--scene-threshold", type=float, default=0.3, help="0-1, lower = more frames (default 0.3)")
     ap.add_argument("--max-frames", type=int, default=40, help="Upper limit on frames (default 40)")
@@ -997,42 +1148,66 @@ def main() -> None:
     span = (end - start) if end is not None else None
     mode = args.mode
     if mode == "auto":
-        mode = "scene" if (span is not None and span <= 20 * 60) else "interval"
-    if mode == "interval" and span is None:
+        if args.quick:
+            mode = "scene" if (span is not None and span <= 20 * 60) else "interval"
+        else:
+            mode = "smart"
+    if mode in ("smart", "interval") and span is None:
         log("Duration unknown (live or unprobeable stream); using scene mode with a time limit.")
         mode = "scene"
     args.mode_used = mode
+    timings: dict = {}
+    t_all = time.time()
 
-    if mode == "interval":
-        interval = args.interval or max(2.0, span / args.max_frames)
-        frames = frames_by_interval(s, interval_times(start, end, interval, args.max_frames),
-                                    frames_dir, args.width, args.workers)
-        frames = drop_near_duplicates(frames)
-        args.mode_used = f"interval, every ~{interval:.0f}s"
-    else:
-        frames = frames_by_scene(s, start, end, args.scene_threshold, frames_dir, args.width, args.timeout)
-        frames = drop_near_duplicates(frames)
-        if span is not None and len(frames) < args.min_frames:
-            # Scene detection can miss changes (e.g. two slides of similar brightness).
-            # Fill the biggest gaps, then drop any that turn out identical to their neighbour.
-            extra_t = gap_fill_times([f["t"] for f in frames], start, end, args.min_frames - len(frames))
-            if extra_t:
-                log(f"Scene scan found {len(frames)} frames; checking {len(extra_t)} more in the biggest gaps.")
-                frames += frames_by_interval(s, extra_t, frames_dir, args.width, args.workers, prefix="gap_")
-                frames.sort(key=lambda f: f["t"])
-                frames = drop_near_duplicates(frames)
-        frames = thin_evenly(frames, args.max_frames)
-        args.mode_used = f"scene changes (threshold {args.scene_threshold})"
-    frames = renumber(frames, frames_dir)
+    def video_job():
+        t0 = time.time()
+        vis: dict = {}
+        if mode == "smart":
+            vis = smart_frames(s, args, start, end, frames_dir, out)
+            frames = vis["frames"]
+            args.mode_used = "smart: every frame read; scene changes, motion peaks and even coverage"
+        elif mode == "interval":
+            interval = args.interval or max(2.0, span / args.max_frames)
+            frames = frames_by_interval(s, interval_times(start, end, interval, args.max_frames),
+                                        frames_dir, args.width, args.workers)
+            frames = drop_near_duplicates(frames)
+            args.mode_used = f"interval, every ~{interval:.0f}s"
+        else:
+            frames = frames_by_scene(s, start, end, args.scene_threshold, frames_dir, args.width, args.timeout)
+            frames = drop_near_duplicates(frames)
+            if span is not None and len(frames) < args.min_frames:
+                # Scene detection can miss changes (e.g. two slides of similar brightness).
+                extra_t = gap_fill_times([f["t"] for f in frames], start, end, args.min_frames - len(frames))
+                if extra_t:
+                    log(f"Scene scan found {len(frames)} frames; checking {len(extra_t)} more in the biggest gaps.")
+                    frames += frames_by_interval(s, extra_t, frames_dir, args.width, args.workers, prefix="gap_")
+                    frames.sort(key=lambda f: f["t"])
+                    frames = drop_near_duplicates(frames)
+            frames = thin_evenly(frames, args.max_frames)
+            args.mode_used = f"scene changes (threshold {args.scene_threshold})"
+        frames = renumber(frames, frames_dir)
+        timings["video"] = round(time.time() - t0, 1)
+        return frames, vis
+
+    def audio_job():
+        t0 = time.time()
+        res = audio_pipeline(s, args, out, start, end)
+        timings["audio"] = round(time.time() - t0, 1)
+        return res
+
+    # Pictures and sound are processed at the same time.
+    with cf.ThreadPoolExecutor(max_workers=2) as ex:
+        fv, fa = ex.submit(video_job), ex.submit(audio_job)
+        frames, vis = fv.result()
+        tr, events = fa.result()
     if not frames:
         log("No frames could be extracted (audio-only stream, DRM, or the server refused range requests).")
-
-    effective_end = end if end is not None else (frames[-1]["t"] if frames else start)
-    tr = get_transcript(s, args, out, start, end)
     segs, how = tr["segs"], tr["how"]
 
+    effective_end = end if end is not None else (frames[-1]["t"] if frames else start)
     sheets = [] if args.no_sheets else make_sheets(frames, out / "sheets", args.sheet_size, cols=3 if args.sheet_size > 4 else 2)
-    data = write_outputs(out, s, frames, tr, sheets, start, effective_end, args)
+    timings["total"] = round(time.time() - t_all, 1)
+    data = write_outputs(out, s, frames, tr, sheets, start, effective_end, args, vis, events, timings)
 
     summary = {
         "ok": bool(frames or segs),
@@ -1046,6 +1221,11 @@ def main() -> None:
         "speech_language": tr.get("lang") or None,
         "speech_segments": len(segs),
         "english_translation_segments": len(tr["segs_en"]),
+        "frames_read": data.get("frames_read"),
+        "fast_motion_segments": len(vis.get("segments", [])),
+        "motion_strips": sum(1 for sg in vis.get("segments", []) if sg.get("strip")),
+        "sound_events": len(events),
+        "seconds": timings,
     }
     print(json.dumps(summary, indent=2, ensure_ascii=False))
 
