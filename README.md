@@ -55,8 +55,10 @@ sudo apt install ffmpeg        # Ubuntu / Debian
 pip install -U -r requirements.txt     # run inside the skill folder
 ```
 
-`faster-whisper` in requirements.txt is optional. It is only used when a video has no captions;
-the first run downloads a speech model (about 150 MB for `base`).
+`faster-whisper` lets the agent **listen to the audio** in about 100 languages (Telugu, Hindi,
+Tamil, Kannada, Malayalam, English, Spanish, ...). It is strongly recommended. The first run
+downloads a speech model (`base` about 150 MB for English, `small` about 500 MB for other
+languages).
 
 ## 2. Put the folder where your agent looks for skills
 
@@ -153,7 +155,8 @@ Output:
 | `out/timeline.md` | Read this first: each key frame with what was said while it was on screen |
 | `out/frames/*.jpg` | Key frames, named by timestamp (`frame_0003_00h04m12s.jpg`) |
 | `out/sheets/*.jpg` | Contact sheets: six frames per image with timestamps, for agents with image limits |
-| `out/transcript.txt` | Speech only, with timestamps |
+| `out/transcript.txt` | Speech only, with timestamps, in the spoken language |
+| `out/transcript_en.txt` | English translation of the speech (with `--translate`) |
 | `out/timeline.json` | Everything above, machine-readable |
 
 ## Learn a skill from a video
@@ -190,6 +193,22 @@ anywhere, such as a git repo. Learned skills keep a Source section with the vide
 creator gets credit. Code read from video frames can contain small errors, which is why the
 workflow tests before it calls a skill done.
 
+## Listening to the audio, in any language
+
+| Option | What it does |
+|---|---|
+| *(default)* `--transcript auto` | Uses the creator's captions if there are any, otherwise **listens to the audio**, and only then falls back to the site's auto-captions |
+| `--transcript audio` | Always listens to the audio (best for non-English, Tenglish/Hinglish, or bad captions). Learn mode uses this |
+| `--translate` | Adds an English translation under each spoken line (`EN` lines and `transcript_en.txt`) |
+| `--lang te` | Tells it the spoken language instead of detecting it |
+| `--whisper-model-other medium` | More accurate (slower) model for non-English speech; `large-v3` is the most accurate |
+| `--transcript captions` | Never listens; fastest |
+
+The spoken language is detected automatically and shown in `timeline.md`, for example
+`Spoken language: te (detected, 97% sure)`. English uses the small `base` model; other languages
+automatically switch to `small`, because the smallest models are weak outside English.
+Listening covers speech only; music and sound effects are not described.
+
 ## How it works
 
 1. **Find the stream.** Local files and direct media links go straight to ffmpeg. Web pages go
@@ -198,8 +217,9 @@ workflow tests before it calls a skill done.
    the picture changes (scene detection), then fills large gaps and drops duplicates. Longer
    videos use evenly spaced frames, grabbed by seeking inside the stream, so only small pieces
    are fetched.
-3. **Speech.** Uploaded captions first, then auto-captions, then subtitle tracks inside the file,
-   then Whisper on the streamed audio.
+3. **Speech.** Creator-uploaded captions or subtitle tracks inside the file first, then Whisper
+   listening to the streamed audio (language detected automatically, optional English
+   translation), then the site's auto-captions as a last resort.
 4. **Timeline.** Frames and speech are matched by timestamp and written to `timeline.md`.
 
 ## Limits

@@ -29,9 +29,11 @@ Tools that invoke skills with a different prefix, such as `$video-watch`, use th
 
 Carry the whole job through without stopping, following `references/video-to-skill.md`:
 
-1. **Watch the whole video.** Cover it from start to end, not just the opening: an overview pass
-   over the full length, then dense passes on every part where code, commands or settings are on
-   screen. For videos over 20 minutes, also go chapter by chapter (or every 10 minutes) so no
+1. **Watch and listen to the whole video.** Cover it from start to end, not just the opening: an
+   overview pass over the full length with `--transcript audio --translate` (listens to the real
+   audio in any language and adds an English translation when it is not English), then dense
+   passes on every part where code, commands or settings are on screen (`--transcript none` there,
+   since you already have the speech). For videos over 20 minutes, also go chapter by chapter (or every 10 minutes) so no
    section is skipped. Tell the user briefly that you are watching ("Watching 18:42 video...").
 2. **Learn:** extract goal, prerequisites, steps, commands, decisions and reasons, mistakes and
    fixes, and how to check success.
@@ -68,7 +70,8 @@ If something is missing, tell the user and offer to install it:
 
 - ffmpeg: `brew install ffmpeg` (macOS), `winget install ffmpeg` (Windows), `sudo apt install ffmpeg` (Linux)
 - Python packages: `pip install -U yt-dlp pillow` (Pillow makes contact sheets)
-- Optional speech-to-text for videos with no captions: `pip install faster-whisper`
+- Listening to the audio (strongly recommended, all languages): `pip install faster-whisper`.
+  The first run downloads a speech model (base about 150 MB, small about 500 MB).
 
 ## 2. Run the script
 
@@ -90,10 +93,33 @@ Useful options:
 | More detail on a moment | `--start 4:00 --end 4:30 --mode interval --interval 1` |
 | More or fewer frames | `--max-frames 60`, or `--scene-threshold 0.2` (lower = more frames) |
 | Long video (over 20 min) | Defaults to evenly spaced frames; raise `--max-frames` if your image budget allows |
-| Captions in another language | `--lang te` (Telugu), `--lang hi`, ... |
-| Force speech-to-text | `--transcript whisper --whisper-model small` |
+| Always listen to the audio (best for non-English, mixed languages like Tenglish/Hinglish, or bad captions) | `--transcript audio` |
+| Add an English translation of the speech | `--translate` |
+| Tell it the spoken language instead of detecting it | `--lang te` (Telugu), `--lang hi`, `--lang ta`, ... |
+| More accurate listening for Indian and other non-English languages | `--whisper-model-other medium` (or `large-v3`; slower) |
+| Fastest, captions only, never listen | `--transcript captions` |
 | Login-only video the user owns | `--cookies-from-browser chrome` (only when the user asks for it) |
 | Direct stream URL without extension | `--direct` |
+
+## Listening and languages
+
+By default (`--transcript auto`) the script uses the creator's own captions if the video has them,
+otherwise it **listens to the audio** with Whisper, and only falls back to the site's automatic
+captions when listening is not possible. `--transcript audio` always listens.
+
+- Whisper understands about 100 languages and detects the spoken one automatically
+  (`timeline.md` shows "Spoken language: te (detected, 97% sure)"). It handles code-mixed speech
+  such as Telugu-English reasonably well; pass `--lang` if detection picks the wrong language.
+- For non-English speech the script automatically uses a larger model (`small` by default) because
+  the smallest models are weak outside English. Use `--whisper-model-other medium` or `large-v3`
+  for the best accuracy on Indian languages if the machine can handle it.
+- `--translate` adds English lines marked `EN` under each original line, plus `transcript_en.txt`.
+  Quote the original language when it matters (names, exact phrases) and use the English to be sure
+  of the meaning.
+- Listening covers speech only. Music, sound effects and tone of voice are not described, so do not
+  claim them unless they are visible or spoken about.
+- On a computer without a GPU, listening to a long video with `small` or bigger models can take
+  several minutes; tell the user it is working.
 
 ## 3. Watch it
 
@@ -115,7 +141,8 @@ Useful options:
   between two frames (fast action, a quick gesture), say so and re-run on that window with
   `--mode interval --interval 1` instead of guessing.
 - If the speech source is "none found", tell the user your answer is based on visuals and page
-  metadata only, and suggest installing faster-whisper.
+  metadata only, and suggest installing faster-whisper so the audio can be listened to.
+- Answer in the language the user writes in, even when the video is in another language.
 - For long videos, summarize section by section (chapters, or every 10 minutes) before giving an
   overall summary.
 
