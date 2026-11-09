@@ -58,20 +58,28 @@ unrelated topics ("Make one skill for the whole course, or one per topic?").
 
 The user can see all learned skills any time with `scripts/scaffold_skill.py --list`.
 
-## 1. Check the tools (once per machine)
+## 1. Setup (automatic, once per computer)
 
-The script needs `ffmpeg` and `ffprobe`. Web pages also need `yt-dlp`. Check with:
+Before the first video, run the check. It is fast and safe to run every time:
 
 ```bash
-ffmpeg -version && yt-dlp --version
+python3 <skill-folder>/scripts/video_watch.py --check
 ```
 
-If something is missing, tell the user and offer to install it:
-
-- ffmpeg: `brew install ffmpeg` (macOS), `winget install ffmpeg` (Windows), `sudo apt install ffmpeg` (Linux)
-- Python packages: `pip install -U yt-dlp pillow` (Pillow makes contact sheets)
-- Listening to the audio (strongly recommended, all languages): `pip install faster-whisper`.
-  The first run downloads a speech model (base about 150 MB, small about 500 MB).
+- If it ends with "Ready.", continue.
+- If anything is marked MISS, or Whisper is missing, set everything up yourself without asking the
+  user to do it by hand. Tell them in one line ("One-time setup: installing video tools, about
+  2-5 minutes"), then run:
+  ```bash
+  python3 <skill-folder>/install.py --deps-only
+  ```
+  It needs no admin rights: it creates a private environment in `~/.video-watch` with yt-dlp,
+  Pillow, faster-whisper and a bundled ffmpeg, and downloads the speech models. After that,
+  `scripts/video_watch.py` uses that environment automatically. Run `--check` again to confirm.
+- If Python itself is missing, ask the user to install Python 3 from python.org (or
+  `brew install python`) and stop.
+- If YouTube links fail and the check shows no JavaScript runtime, suggest installing Deno or
+  Node.js.
 
 ## 2. Run the script
 

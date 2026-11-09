@@ -12,30 +12,49 @@ then looks at the frames with its own vision and reads the speech.
 - Same folder works in Claude Code, OpenAI Codex, Gemini CLI, Cursor, GitHub Copilot and other
   tools that support the open Agent Skills (`SKILL.md`) format.
 
-## Quick install
+## Quick install (one command, everything automatic)
+
+**macOS / Linux**
 
 ```bash
-# Claude Code
-git clone https://github.com/vamsireddy4/agent-video-skill ~/.claude/skills/video-watch
-
-# OpenAI Codex, GitHub Copilot and other tools that read the shared folder
-git clone https://github.com/vamsireddy4/agent-video-skill ~/.agents/skills/video-watch
-
-# Gemini CLI
-git clone https://github.com/vamsireddy4/agent-video-skill ~/.gemini/skills/video-watch
-
-# Cursor
-git clone https://github.com/vamsireddy4/agent-video-skill ~/.cursor/skills/video-watch
+curl -fsSL https://raw.githubusercontent.com/vamsireddy4/agent-video-skill/main/install.sh | sh
 ```
 
-Then install ffmpeg and the Python packages (section 1 below). To update later, run `git pull`
-inside that folder.
+**Windows (PowerShell)**
+
+```powershell
+irm https://raw.githubusercontent.com/vamsireddy4/agent-video-skill/main/install.py | python -
+```
+
+The installer needs only Python 3.9+ and no admin rights. It:
+
+1. finds the AI agents on your computer (Claude Code, Codex, Gemini CLI, Cursor) and installs the
+   skill into each one's skills folder;
+2. creates a private environment in `~/.video-watch` with yt-dlp, Pillow, faster-whisper and a
+   bundled ffmpeg (your own ffmpeg is used if you already have one);
+3. downloads the Whisper speech models so the first video is fast;
+4. runs a self-check and prints where everything went.
+
+Run the same command again to update. Options: `--agents claude,codex` to choose agents,
+`--no-models` to skip the model download, `--uninstall` to remove everything.
+
+**Prefer git clone?** That works too. Clone into your agent's skills folder:
+
+```bash
+git clone https://github.com/vamsireddy4/agent-video-skill ~/.claude/skills/video-watch
+```
+
+Git never runs code on clone, so the setup happens on first use instead: the first time you use
+`/video-watch`, the agent runs `scripts/video_watch.py --check`, sees what is missing and runs
+`install.py --deps-only` for you. You can also run `python3 install.py` inside the clone yourself.
 
 ```
 video-watch/
 ├── SKILL.md               instructions the agent reads
 ├── README.md              this file
 ├── requirements.txt
+├── install.py             one-command installer (also used for first-use setup)
+├── install.sh             macOS / Linux wrapper for install.py
 ├── references/
 │   └── video-to-skill.md  step-by-step guide for learning a skill from a video
 └── scripts/
@@ -43,22 +62,22 @@ video-watch/
     └── scaffold_skill.py  creates and validates new skill folders
 ```
 
-## 1. Install the requirements
+## 1. Requirements (handled by the installer)
+
+You only need Python 3.9 or newer. The installer or the first-use setup installs the rest into
+`~/.video-watch`: yt-dlp, Pillow, faster-whisper and a bundled ffmpeg. Check any time:
 
 ```bash
-# ffmpeg (includes ffprobe)
-brew install ffmpeg            # macOS
-winget install ffmpeg          # Windows
-sudo apt install ffmpeg        # Ubuntu / Debian
-
-# Python packages
-pip install -U -r requirements.txt     # run inside the skill folder
+python3 ~/.claude/skills/video-watch/scripts/video_watch.py --check
 ```
 
 `faster-whisper` lets the agent **listen to the audio** in about 100 languages (Telugu, Hindi,
-Tamil, Kannada, Malayalam, English, Spanish, ...). It is strongly recommended. The first run
-downloads a speech model (`base` about 150 MB for English, `small` about 500 MB for other
-languages).
+Tamil, Kannada, Malayalam, English, Spanish, ...). The installer downloads the `base` (about
+150 MB, English) and `small` (about 500 MB, other languages) speech models. For YouTube, recent
+yt-dlp versions may also need a JavaScript runtime: install Deno or Node.js if YouTube links fail.
+
+To install manually instead: `brew install ffmpeg` / `winget install ffmpeg` /
+`sudo apt install ffmpeg`, then `pip install -U -r requirements.txt`.
 
 ## 2. Put the folder where your agent looks for skills
 
