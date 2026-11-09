@@ -29,16 +29,19 @@ user is not around, take the main task the video teaches and say which one you c
 Tutorials put code, commands and settings on screen for only a few seconds, so scene detection
 alone can miss them. Watch in two passes:
 
-1. Overview pass (find the structure):
+1. Overview pass (find the structure and listen to everything that is said):
    ```bash
-   python3 <video-watch>/scripts/video_watch.py "<url>" -o ./vw-overview
+   python3 <video-watch>/scripts/video_watch.py "<url>" -o ./vw-overview --transcript audio --translate
    ```
+   This listens to the real audio in whatever language the video uses and, when it is not English,
+   adds English lines. Write the skill in the user's language (or English if unsure), not
+   necessarily the video's language.
    Read `timeline.md` and the contact sheets. Note chapters and the time ranges where code,
    terminal output, config files or settings screens appear.
 
 2. Detail pass on each of those ranges (read the screen):
    ```bash
-   python3 <video-watch>/scripts/video_watch.py "<url>" -o ./vw-detail-1 \
+   python3 <video-watch>/scripts/video_watch.py "<url>" -o ./vw-detail-1 --transcript none \
        --start 06:10 --end 09:40 --mode interval --interval 2 --max-frames 120 --width 1600
    ```
    Open the individual frames (not only the contact sheets) to read code and commands; the wider
