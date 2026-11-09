@@ -107,26 +107,6 @@ Then try learning a skill from a tutorial:
 A link can be YouTube, Vimeo, X, Instagram, TikTok, a news site, a direct `.mp4` / `.m3u8`, or a
 file on your computer. You can also just ask in your own words. In Codex, use `$video-watch`.
 
-## What the AI sees
-
-Here is a 20-second demo video:
-
-![The demo video](docs/demo-video.jpg)
-
-**Key frames.** Every frame is read on your computer, and the important ones go to the AI: each
-new slide, new line of code, scene change and moment of action.
-
-![Key frames](docs/contact-sheet.jpg)
-
-**Fast motion, frame by frame.** When something moves fast, the AI gets a strip of frames so it can
-follow the movement.
-
-![Motion strip](docs/motion-strip.jpg)
-
-**A timeline it can read.** Pictures, speech, music, sounds and tone, lined up by time.
-
-![timeline.md](docs/timeline.png)
-
 ## Learn a skill from a video
 
 `/video-watch <link>` watches a tutorial from start to end, learns the steps, writes a new skill,
