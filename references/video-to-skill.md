@@ -13,8 +13,8 @@ The output is a new skill folder that works in any agent supporting the Agent Sk
 └── references/       longer material the skill points to (optional)
 ```
 
-Started with `/video-watch learn <link>`: run every step below without waiting for approval
-between them. Use the skill name and `--agent` from the command if given; otherwise choose a short
+Started with `/video-watch <link>` (or `/video-watch learn <link>`): run every step below without
+waiting for approval between them, and watch the whole video from start to end. Use the skill name and `--agent` from the command if given; otherwise choose a short
 task name and the agent you are running in (see "Commands" in SKILL.md).
 
 ## Step 1: Agree on the goal (one short question if unclear)
@@ -100,19 +100,32 @@ a transcript. Short commands and config lines are fine.
 
 - Run `python3 <video-watch>/scripts/scaffold_skill.py --validate <skill-folder>` to check the
   frontmatter (name format, description length, folder name).
-- Run every script and command you can safely run (in a temporary folder, never against the user's
-  production systems). Fix anything the video got wrong or that is out of date, and note the fix
+- Run every script and command you can safely run (in a temporary folder, not inside the skill
+  folder and never against the user's production systems). Fix anything the video got wrong or that is out of date, and note the fix
   in the skill ("The video uses `docker-compose`; current Docker uses `docker compose`").
 - If you could not test something (needs cloud credentials, paid service, other OS), say so in the
   skill under a "Not verified" note and tell the user.
 - Read the finished SKILL.md once as if you were a different agent seeing it for the first time:
   could you follow it without the video?
 
-## Step 6: Report back
+## Step 6: Show the user the skill
 
-Tell the user: the skill name and where it was saved, what it covers, what was tested, what could
-not be verified, and any gaps from the video. Offer to install it for another agent too (copy the
-folder or run the scaffold with another `--agent`).
+Print the confirmation card and show it to the user exactly as printed, in a code block:
+
+```bash
+python3 <video-watch>/scripts/scaffold_skill.py --card <skill-folder>
+```
+
+The card is read from disk, so it proves the skill exists. It shows the skill name, where it is
+saved, which agent it is for, the description, the files, how to use it (`/<skill-name>` or plain
+words), and the "Not verified" notes. Below the card, add one or two lines: what the skill teaches
+and the first thing to try. Offer to install it for another agent too (copy the folder, or run the
+scaffold with another `--agent`).
+
+If no valid skill was saved, say "Skill was NOT created", give the reason, and what would fix it.
+Never say a skill was created unless the card printed "SKILL CREATED".
+
+All learned skills can be listed with `scaffold_skill.py --list`.
 
 ## Rules
 
