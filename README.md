@@ -88,14 +88,47 @@ On Windows, use `python` instead of `python3` and a path such as
 
 | Command | What happens |
 |---|---|
-| `/video-watch <link or file>` | Watches the video and summarizes it with timestamps |
-| `/video-watch <link> <question>` | Watches and answers your question |
-| `/video-watch learn <link>` | Watches, learns the method, and **creates a new skill** for your agent |
-| `/video-watch learn <link> docker-deploy --agent codex` | Same, with your own skill name and target agent |
+| `/video-watch <link>` | Watches the **whole** video, learns it, **creates a new skill** with a clear name, and shows a "SKILL CREATED" card |
+| `/video-watch <link> docker-deploy --agent codex` | Same, with your own skill name and target agent |
+| `/video-watch ask <link> <question>` | Only watches and answers your question (no skill) |
+| `/video-watch summary <link>` | Only watches and summarizes with timestamps (no skill) |
 
-`skill` works the same as `learn`. In tools that use another prefix (for example `$video-watch`),
-type the same words after it. Learn mode runs end to end: watch, extract, create, validate, test,
-report.
+`learn` and `skill` also work (`/video-watch learn <link>`). In tools that use another prefix
+(for example `$video-watch`), type the same words after it.
+
+When a skill is created you see a card like this, read straight from disk:
+
+```
+================================================================
+SKILL CREATED: flask-health-api
+================================================================
+Saved at     : ~/.claude/skills/flask-health-api
+For agent    : Claude Code
+Status       : VALID
+Learned from : [Flask health API tutorial](https://youtu.be/...)
+Learned on   : 2026-11-09
+What it does :
+    Create and run a minimal Flask API with a /health endpoint on a free
+    port. Use when the user wants a quick Flask server, a health-check
+    endpoint, or a Python API starter.
+Files:
+    SKILL.md  (1,142 bytes)
+    scripts/app.py  (111 bytes)
+    scripts/run.sh  (330 bytes)
+How to use it:
+    /flask-health-api            (in Claude Code; other tools may use another prefix, e.g. $flask-health-api)
+    or just ask for the task in your own words; the agent picks the skill from its description
+    (start a new agent session first if the skill does not show up)
+Not verified:
+    - macOS AirPlay port conflict (tested on Linux only)
+================================================================
+```
+
+If something fails, the agent says "Skill was NOT created" and why. See every skill learned so far:
+
+```bash
+python3 ~/.claude/skills/video-watch/scripts/scaffold_skill.py --list
+```
 
 ### Or just ask
 
@@ -125,7 +158,7 @@ Output:
 
 ## Learn a skill from a video
 
-Type `/video-watch learn <link>`, or ask your agent something like:
+Type `/video-watch <link>`, or ask your agent something like:
 
 - "Watch this Docker tutorial and make a skill out of it: <link>"
 - "Learn the deployment steps from this video and save them as a Codex skill"
@@ -143,7 +176,7 @@ The agent then:
        --source "https://youtu.be/..." --source-title "Video title" --agent claude
    ```
 4. Writes the method in its own words (with runnable scripts), validates it, runs what it safely
-   can, and reports what was not verified.
+   can, and shows you the "SKILL CREATED" card (`scaffold_skill.py --card <folder>`).
 
 Validate any skill folder:
 

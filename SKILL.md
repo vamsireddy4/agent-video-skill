@@ -1,6 +1,6 @@
 ---
 name: video-watch
-description: Watch a video from any URL (YouTube, Vimeo, X, Instagram, TikTok, news sites, direct .mp4/.m3u8 links) or a local file by streaming it into timestamped key frames plus a transcript, then answer questions about what is shown and said, or learn the method a tutorial teaches and save it as a new reusable Agent Skill. Use when the user shares a video link or file and asks to summarize it, explain it, find a moment, read on-screen text, code or slides, compare what was said with what was shown, or says "learn this", "make a skill from this video" or "turn this tutorial into a skill". Invoked as "/video-watch LINK" to watch, or "/video-watch learn LINK" to create a skill.
+description: Watch a video from any URL (YouTube, Vimeo, X, Instagram, TikTok, news sites, direct .mp4/.m3u8 links) or a local file by streaming it into timestamped key frames plus a transcript, then answer questions about what is shown and said, or learn the method a tutorial teaches and save it as a new reusable Agent Skill. Use when the user shares a video link or file and asks to summarize it, explain it, find a moment, read on-screen text, code or slides, compare what was said with what was shown, or says "learn this", "make a skill from this video" or "turn this tutorial into a skill". Invoked as "/video-watch LINK" to watch the whole video, learn it and create a named skill, or "/video-watch ask LINK QUESTION" to only watch and answer.
 ---
 
 # Video watch
@@ -16,20 +16,45 @@ Look at the words that came with the command (or the user's message) and pick th
 
 | What the user typed | Mode |
 |---|---|
-| `/video-watch <link or file>` | Watch: summarize with timestamps (sections 1 to 4) |
-| `/video-watch <link> <question>` | Watch: answer the question (sections 1 to 4) |
-| `/video-watch learn <link or file> [more links] [skill-name] [--agent codex]` | Learn: watch, then create a new skill (section "Learn a skill from a video") |
+| `/video-watch <link or file> [more links] [skill-name] [--agent codex]` | **Learn** (default): watch the whole video, learn it, create a named skill, show the skill card |
+| `/video-watch learn <link>` or `/video-watch skill <link>` | Learn (same as above) |
+| `/video-watch ask <link> <question>` | Watch only: answer the question, no skill |
+| `/video-watch summary <link>` | Watch only: summary with timestamps, no skill |
+| Plain words without the command ("summarize this video", "what's at 4:12?") | Watch only |
 | Plain words like "learn this video", "make a skill from this" | Learn |
 
-`skill` works the same as `learn` (`/video-watch skill <link>`). Tools that invoke skills with a
-different prefix, such as `$video-watch`, use the same words after it.
+Tools that invoke skills with a different prefix, such as `$video-watch`, use the same words after it.
 
-In learn mode, carry the whole job through without stopping: watch, extract, create, validate, test,
-report. Ask a question only when the goal is truly unclear (for example a 2-hour course with many
-unrelated topics). If no skill name is given, choose a short task name such as
-`docker-multistage-deploy`. If no `--agent` is given, save it for the agent you are running in
-(Claude Code: `claude`, Codex: `codex`, Gemini CLI: `gemini`, Cursor: `cursor`, GitHub Copilot:
-`copilot`); if you cannot tell, use `agents` (the shared `~/.agents/skills` folder) and say so.
+### Learn mode (the default command)
+
+Carry the whole job through without stopping, following `references/video-to-skill.md`:
+
+1. **Watch the whole video.** Cover it from start to end, not just the opening: an overview pass
+   over the full length, then dense passes on every part where code, commands or settings are on
+   screen. For videos over 20 minutes, also go chapter by chapter (or every 10 minutes) so no
+   section is skipped. Tell the user briefly that you are watching ("Watching 18:42 video...").
+2. **Learn:** extract goal, prerequisites, steps, commands, decisions and reasons, mistakes and
+   fixes, and how to check success.
+3. **Name it:** use the skill name the user gave; otherwise pick a short, clear task name such as
+   `docker-multistage-deploy` (lowercase words and hyphens, not the video title).
+4. **Create** it with `scripts/scaffold_skill.py` in the skills folder of the agent you are running
+   in (Claude Code: `--agent claude`, Codex: `codex`, Gemini CLI: `gemini`, Cursor: `cursor`, GitHub
+   Copilot: `copilot`; if you cannot tell, `agents` and say so), unless the user gave `--agent`.
+5. **Validate and test:** `scripts/scaffold_skill.py --validate <folder>`, then run the skill's
+   scripts in a temporary folder (not inside the skill folder).
+6. **Show the user the result.** Run `scripts/scaffold_skill.py --card <folder>` and show its
+   output to the user exactly as printed, inside a code block. The card is read from disk, so it is
+   proof the skill exists: name, where it is saved, which agent, what it does, its files, how to use
+   it, and what was not verified. Then add one or two lines in your own words: what the skill
+   teaches and the first thing to try with it.
+7. If any step failed and no valid skill was saved, say clearly **"Skill was NOT created"**, give
+   the reason and what the user can do (for example install ffmpeg, give a direct link). Never
+   claim a skill exists unless the card printed "SKILL CREATED".
+
+Ask a question first only when the goal is truly unclear, for example a 2-hour course covering many
+unrelated topics ("Make one skill for the whole course, or one per topic?").
+
+The user can see all learned skills any time with `scripts/scaffold_skill.py --list`.
 
 ## 1. Check the tools (once per machine)
 
@@ -81,7 +106,7 @@ Useful options:
    individual frames.
 3. Use `timeline.json` if you need to process the data programmatically.
 
-## 4. Answer
+## 4. Answer (watch-only mode)
 
 - Cite timestamps like `[04:12]` so the user can jump to the moment.
 - Say whether something was shown (from a frame) or said (from the transcript). Combining them is
@@ -96,8 +121,8 @@ Useful options:
 
 ## Learn a skill from a video
 
-When the user wants you to learn what a video teaches and keep it as a skill ("watch this
-tutorial and make a skill out of it"), follow `references/video-to-skill.md`. In short:
+Learn mode (the default `/video-watch` command, see "Commands") follows
+`references/video-to-skill.md`. In short:
 
 1. Watch twice: an overview pass, then dense passes (`--mode interval --interval 2 --width 1600`)
    on the parts where code, commands or settings are on screen.
@@ -106,8 +131,8 @@ tutorial and make a skill out of it"), follow `references/video-to-skill.md`. In
 3. Create the new skill with `scripts/scaffold_skill.py <name> --description "..." --source <url>
    --agent <claude|codex|gemini|cursor|agents>` and write the method in your own words, with
    runnable code in its `scripts/` folder.
-4. Validate with `scripts/scaffold_skill.py --validate <folder>`, run what you safely can, and
-   report what was and was not verified.
+4. Validate with `scripts/scaffold_skill.py --validate <folder>`, run what you safely can, then
+   show the user `scripts/scaffold_skill.py --card <folder>` and what was not verified.
 
 ## 5. Limits and rules
 
