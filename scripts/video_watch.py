@@ -428,71 +428,72 @@ def pick_caption_lang(available: dict, wanted: str | None) -> str | None:
     return keys[0]
 
 
-def captions_from_site(s: Source, args, work: Path) -> tuple[list[dict], str]:
+def captions_from_site(s: Source, args, work: Path, which: str) -> tuple[list[dict], str, str]:
+    """which = 'manual' (uploaded by the creator) or 'auto' (the site's speech recognition)."""
     if s.kind != "site" or not s.info:
-        return [], ""
-    manual = s.info.get("subtitles") or {}
-    auto = s.info.get("automatic_captions") or {}
-    lang = pick_caption_lang(manual, args.lang)
-    use_auto = False
+        return [], "", ""
+    pool = (s.info.get("subtitles") if which == "manual" else s.info.get("automatic_captions")) or {}
+    lang = pick_caption_lang(pool, args.lang)
     if not lang:
-        lang = pick_caption_lang(auto, args.lang)
-        use_auto = bool(lang)
-    if not lang:
-        return [], ""
-    log(f"Fetching {'auto-generated' if use_auto else 'uploaded'} captions ({lang}), no video download...")
+        return [], "", ""
+    log(f"Fetching {'uploaded' if which == 'manual' else 'auto-generated'} captions ({lang}), no video download...")
     sub_dir = work / "_subs"
     sub_dir.mkdir(exist_ok=True)
     cmd = ytdlp_base(args) + ["--skip-download", "--sub-langs", lang, "--sub-format", "vtt/srt/best",
                               "--convert-subs", "vtt", "-o", str(sub_dir / "subs.%(ext)s"),
-                              "--write-auto-subs" if use_auto else "--write-subs", s.webpage_url or s.input]
+                              "--write-subs" if which == "manual" else "--write-auto-subs", s.webpage_url or s.input]
     try:
         run(cmd, timeout=180)
     except subprocess.TimeoutExpired:
-        return [], ""
+        return [], "", ""
     files = sorted(sub_dir.glob("subs*.vtt")) + sorted(sub_dir.glob("subs*.srt"))
     segs = parse_vtt(files[0].read_text(encoding="utf-8", errors="ignore")) if files else []
     shutil.rmtree(sub_dir, ignore_errors=True)
-    return segs, (f"auto-captions ({lang})" if use_auto else f"captions ({lang})") if segs else ""
+    if not segs:
+        return [], "", ""
+    return segs, (f"captions uploaded by the creator ({lang})" if which == "manual"
+                  else f"site auto-captions ({lang})"), lang.split("-")[0]
 
 
-def captions_embedded(s: Source, start: float, end: float | None) -> tuple[list[dict], str]:
+def captions_embedded(s: Source, start: float, end: float | None) -> tuple[list[dict], str, str]:
     """Subtitle track inside the file/stream itself (common in .mkv/.mp4)."""
-    cmd = ["ffprobe", "-v", "error", "-select_streams", "s", "-show_entries", "stream=index", "-of", "csv=p=0"]
+    cmd = ["ffprobe", "-v", "error", "-select_streams", "s", "-show_entries", "stream=index:stream_tags=language",
+           "-of", "csv=p=0"]
     cmd += s.ffmpeg_input(s.video_url)[:-2] + [s.video_url]
     try:
         r = run(cmd, timeout=60)
     except subprocess.TimeoutExpired:
-        return [], ""
+        return [], "", ""
     if not r.stdout.strip():
-        return [], ""
+        return [], "", ""
+    first = r.stdout.strip().splitlines()[0].split(",")
+    lang = first[1] if len(first) > 1 and first[1] not in ("", "und") else ""
     cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error"] + s.ffmpeg_input(s.video_url)
     cmd += ["-map", "0:s:0", "-f", "webvtt", "-"]
     try:
         r = run(cmd, timeout=300)
     except subprocess.TimeoutExpired:
-        return [], ""
+        return [], "", ""
     segs = parse_vtt(r.stdout or "")
     segs = [x for x in segs if x["end"] >= start and (end is None or x["start"] <= end)]
-    return segs, "embedded subtitles" if segs else ""
+    return segs, ("embedded subtitles" + (f" ({lang})" if lang else "")) if segs else "", lang
 
 
-def whisper_transcribe(s: Source, args, work: Path, start: float, end: float | None) -> tuple[list[dict], str]:
-    engine = None
+def whisper_engine() -> str | None:
     try:
         import faster_whisper  # noqa: F401
-        engine = "faster-whisper"
+        return "faster-whisper"
     except ImportError:
-        try:
-            import whisper  # noqa: F401
-            engine = "openai-whisper"
-        except ImportError:
-            pass
-    if not engine:
-        log("No captions found and no Whisper installed - continuing without speech. "
-            "(pip install faster-whisper to enable it)")
-        return [], ""
+        pass
+    try:
+        import whisper  # noqa: F401
+        return "openai-whisper"
+    except ImportError:
+        return None
 
+
+def stream_audio(s: Source, args, work: Path, start: float, end: float | None) -> Path | None:
+    """Stream only the audio track into a small 16 kHz mono WAV (deleted after use)."""
     wav = work / "_audio.wav"
     cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y"]
     if start:
@@ -501,56 +502,164 @@ def whisper_transcribe(s: Source, args, work: Path, start: float, end: float | N
     if end is not None:
         cmd += ["-t", f"{max(0.1, end - start):.3f}"]
     cmd += ["-vn", "-ac", "1", "-ar", "16000", "-f", "wav", str(wav)]
-    log("Streaming the audio track for transcription...")
+    log("Listening: streaming the audio track...")
     try:
         r = run(cmd, timeout=args.timeout)
     except subprocess.TimeoutExpired:
-        log("Audio streaming timed out; continuing without speech.")
+        log("Audio streaming timed out.")
         wav.unlink(missing_ok=True)
-        return [], ""
+        return None
     if r.returncode != 0 or not wav.exists() or wav.stat().st_size < 2000:
         log("This video has no usable audio track.")
         wav.unlink(missing_ok=True)
-        return [], ""
+        return None
+    return wav
 
-    segs: list[dict] = []
-    log(f"Transcribing with {engine} ({args.whisper_model} model)...")
+
+def _segs_from(it, offset: float) -> list[dict]:
+    out = []
+    for sg in it:
+        start_t = sg.start if hasattr(sg, "start") else sg["start"]
+        end_t = sg.end if hasattr(sg, "end") else sg["end"]
+        text = (sg.text if hasattr(sg, "text") else sg["text"]).strip()
+        if text:
+            out.append({"start": round(start_t + offset, 2), "end": round(end_t + offset, 2), "text": text})
+    return out
+
+
+def whisper_transcribe(s: Source, args, work: Path, start: float, end: float | None) -> dict:
+    """Listen to the audio with Whisper. Detects the spoken language automatically
+    (about 100 languages) unless --lang is given. Returns a dict with segs, how, lang,
+    lang_prob and (with --translate) segs_en."""
+    result = {"segs": [], "how": "", "lang": "", "lang_prob": None, "segs_en": []}
+    engine = whisper_engine()
+    if not engine:
+        log("Whisper is not installed, so the audio cannot be listened to. "
+            "Install it with: pip install faster-whisper")
+        return result
+    wav = stream_audio(s, args, work, start, end)
+    if wav is None:
+        return result
+
+    wanted = args.whisper_model
+    lang = args.lang
     try:
         if engine == "faster-whisper":
             from faster_whisper import WhisperModel
-            model = WhisperModel(args.whisper_model, device="auto", compute_type="int8")
-            it, _ = model.transcribe(str(wav), language=args.lang, vad_filter=True)
-            for sg in it:
-                segs.append({"start": round(sg.start + start, 2), "end": round(sg.end + start, 2), "text": sg.text.strip()})
+
+            def load(size):
+                log(f"Loading Whisper '{size}' model (first use downloads it)...")
+                return WhisperModel(size, device="auto", compute_type="int8")
+
+            if wanted == "auto":
+                size = "base" if (lang is None or lang == "en") else args.whisper_model_other
+            else:
+                size = wanted
+            model = load(size)
+            it, info = model.transcribe(str(wav), language=lang, vad_filter=True)
+            prob = None
+            if lang is None:
+                lang = info.language
+                prob = getattr(info, "language_probability", None)
+                log(f"Spoken language detected: {lang}" + (f" ({prob:.0%} sure)" if prob else ""))
+            if wanted == "auto" and lang != "en" and size == "base":
+                # Small models are weak outside English; use a bigger one for other languages.
+                size = args.whisper_model_other
+                model = load(size)
+                it, info = model.transcribe(str(wav), language=lang, vad_filter=True)
+            log(f"Transcribing speech in '{lang}' with Whisper {size}...")
+            result["segs"] = _segs_from(it, start)
+            if args.translate and lang != "en":
+                log("Translating the speech to English...")
+                it_en, _ = model.transcribe(str(wav), language=lang, task="translate", vad_filter=True)
+                result["segs_en"] = _segs_from(it_en, start)
         else:
             import whisper
-            model = whisper.load_model(args.whisper_model)
-            res = model.transcribe(str(wav), language=args.lang, fp16=False)
-            for sg in res.get("segments", []):
-                segs.append({"start": round(sg["start"] + start, 2), "end": round(sg["end"] + start, 2), "text": sg["text"].strip()})
-    except Exception as e:  # model download blocked, no space, etc.
-        log(f"Whisper failed ({type(e).__name__}: {e}); continuing without speech.")
-        segs = []
+            if wanted == "auto":
+                size = "base" if (lang is None or lang == "en") else args.whisper_model_other
+            else:
+                size = wanted
+            log(f"Loading Whisper '{size}' model (first use downloads it)...")
+            model = whisper.load_model(size)
+            prob = None
+            if not lang:
+                audio = whisper.pad_or_trim(whisper.load_audio(str(wav)))
+                n_mels = getattr(getattr(model, "dims", None), "n_mels", 80)
+                mel = whisper.log_mel_spectrogram(audio, n_mels=n_mels).to(model.device)
+                _, probs = model.detect_language(mel)
+                lang = max(probs, key=probs.get)
+                prob = probs[lang]
+                log(f"Spoken language detected: {lang} ({prob:.0%} sure)")
+            if wanted == "auto" and lang != "en" and size == "base":
+                size = args.whisper_model_other
+                log(f"Loading Whisper '{size}' model for '{lang}'...")
+                model = whisper.load_model(size)
+            log(f"Transcribing speech in '{lang}' with Whisper {size}...")
+            res = model.transcribe(str(wav), language=lang, fp16=False)
+            result["segs"] = _segs_from(res.get("segments", []), start)
+            if args.translate and lang != "en":
+                log("Translating the speech to English...")
+                res_en = model.transcribe(str(wav), language=lang, task="translate", fp16=False)
+                result["segs_en"] = _segs_from(res_en.get("segments", []), start)
+        result["lang"] = lang or ""
+        result["lang_prob"] = round(prob, 3) if prob else None
+        if result["segs"]:
+            result["how"] = f"listened to the audio: Whisper {size} ({lang})"
+    except Exception as e:  # model download blocked, no disk space, unsupported device...
+        log(f"Whisper failed ({type(e).__name__}: {e}).")
+        result["segs"], result["segs_en"] = [], []
     finally:
         wav.unlink(missing_ok=True)
-    segs = [x for x in segs if x["text"]]
-    return segs, f"whisper ({args.whisper_model})" if segs else ""
+    return result
 
 
-def get_transcript(s: Source, args, work: Path, start: float, end: float | None) -> tuple[list[dict], str]:
-    mode = args.transcript
+def get_transcript(s: Source, args, work: Path, start: float, end: float | None) -> dict:
+    """Pick the speech source.
+
+    auto     : creator-uploaded captions -> subtitles inside the file -> LISTEN to the audio
+               (Whisper) -> the site's auto-captions as a last resort
+    audio    : always listen to the audio (best for non-English, mixed languages, bad captions);
+               falls back to captions if Whisper is unavailable
+    captions : captions only (fastest, never listens)
+    none     : no speech
+    """
+    mode = "audio" if args.transcript == "whisper" else args.transcript
+    empty = {"segs": [], "how": "none", "lang": "", "lang_prob": None, "segs_en": []}
     if mode == "none":
-        return [], "none"
-    segs, how = [], ""
+        return empty
+
+    def from_caps(segs, how, lang):
+        return {"segs": segs, "how": how, "lang": lang, "lang_prob": None, "segs_en": []}
+
+    res = None
     if mode in ("auto", "captions"):
-        segs, how = captions_from_site(s, args, work)
+        segs, how, lang = captions_from_site(s, args, work, "manual")
         if not segs:
-            segs, how = captions_embedded(s, start, end)
-    if not segs and mode in ("auto", "whisper"):
-        segs, how = whisper_transcribe(s, args, work, start, end)
-    if segs:
-        segs = [x for x in segs if x["end"] >= start and (end is None or x["start"] <= end)]
-    return segs, how or "none found"
+            segs, how, lang = captions_embedded(s, start, end)
+        if segs:
+            res = from_caps(segs, how, lang)
+    if res is None and mode in ("auto", "audio"):
+        w = whisper_transcribe(s, args, work, start, end)
+        if w["segs"]:
+            res = w
+    if res is None and mode in ("auto", "captions", "audio"):
+        if mode == "audio":
+            log("Could not listen to the audio; falling back to captions.")
+            segs, how, lang = captions_from_site(s, args, work, "manual")
+            if not segs:
+                segs, how, lang = captions_embedded(s, start, end)
+            if segs:
+                res = from_caps(segs, how, lang)
+        if res is None:
+            segs, how, lang = captions_from_site(s, args, work, "auto")
+            if segs:
+                res = from_caps(segs, how, lang)
+    if res is None:
+        empty["how"] = "none found"
+        return empty
+    keep = lambda xs: [x for x in xs if x["end"] >= start and (end is None or x["start"] <= end)]  # noqa: E731
+    res["segs"], res["segs_en"] = keep(res["segs"]), keep(res["segs_en"])
+    return res
 
 
 # --------------------------------------------------------------------------- #
@@ -603,22 +712,25 @@ def make_sheets(frames: list[dict], sheets_dir: Path, per_sheet: int, cols: int)
 # 5. Timeline package
 # --------------------------------------------------------------------------- #
 
-def build_timeline(frames: list[dict], segs: list[dict], start: float, end: float) -> list[dict]:
-    """Attach each speech segment to the frame that was on screen when it started."""
+def build_timeline(frames: list[dict], segs: list[dict], start: float, end: float,
+                   segs_en: list[dict] | None = None) -> list[dict]:
+    """Attach each speech segment (and its English translation) to the frame on screen when it started."""
+    segs_en = segs_en or []
     items = []
     for i, fr in enumerate(frames):
         lo = start if i == 0 else fr["t"]
         hi = frames[i + 1]["t"] if i + 1 < len(frames) else end + 1
-        speech = [sg for sg in segs if lo <= sg["start"] < hi]
-        items.append({"t": fr["t"], "until": round(hi if i + 1 < len(frames) else end, 2),
-                      "frame": fr["file"], "speech": speech})
-    if not frames and segs:
-        items.append({"t": start, "until": end, "frame": None, "speech": segs})
+        items.append({"t": fr["t"], "until": round(hi if i + 1 < len(frames) else end, 2), "frame": fr["file"],
+                      "speech": [sg for sg in segs if lo <= sg["start"] < hi],
+                      "speech_en": [sg for sg in segs_en if lo <= sg["start"] < hi]})
+    if not frames and (segs or segs_en):
+        items.append({"t": start, "until": end, "frame": None, "speech": segs, "speech_en": segs_en})
     return items
 
 
-def write_outputs(out: Path, s: Source, frames, segs, how, sheets, start, end, args) -> dict:
-    timeline = build_timeline(frames, segs, start, end)
+def write_outputs(out: Path, s: Source, frames, tr: dict, sheets, start, end, args) -> dict:
+    segs, how, segs_en = tr["segs"], tr["how"], tr["segs_en"]
+    timeline = build_timeline(frames, segs, start, end, segs_en)
     rel = lambda p: str(Path(p).relative_to(out)) if p else None  # noqa: E731
 
     md = [f"# Video timeline: {s.title}", ""]
@@ -629,6 +741,10 @@ def write_outputs(out: Path, s: Source, frames, segs, how, sheets, start, end, a
               + (f" (covered {fmt_ts(start)}–{fmt_ts(end)})" if args.start or args.end else ""))
     md.append(f"- Frames: {len(frames)} ({args.mode_used}); contact sheets: {len(sheets)}")
     md.append(f"- Speech: {how} ({len(segs)} segments)")
+    if tr.get("lang"):
+        md.append(f"- Spoken language: {tr['lang']}" + (f" (detected, {tr['lang_prob']:.0%} sure)" if tr.get("lang_prob") else ""))
+    if segs_en:
+        md.append("- English translation of the speech: included (lines marked EN)")
     md.append("")
     md.append("How to read this: each block is one key frame (open the image file to see it) followed by "
               "what was said while that frame was on screen. Frames are snapshots, not continuous video, "
@@ -647,6 +763,8 @@ def write_outputs(out: Path, s: Source, frames, segs, how, sheets, start, end, a
                 md.append(f"- {fmt_ts(sg['start'])} – {sg['text']}")
         else:
             md.append("- (no speech)")
+        for sg in it.get("speech_en", []):
+            md.append(f"- EN {fmt_ts(sg['start'])} – {sg['text']}")
         md.append("")
     if sheets:
         md += ["## Contact sheets", "", "Each sheet shows several frames with their timestamps in the corner:", ""]
@@ -655,17 +773,23 @@ def write_outputs(out: Path, s: Source, frames, segs, how, sheets, start, end, a
 
     (out / "transcript.txt").write_text(
         "\n".join(f"[{fmt_ts(sg['start'])}] {sg['text']}" for sg in segs) + ("\n" if segs else ""), encoding="utf-8")
+    if segs_en:
+        (out / "transcript_en.txt").write_text(
+            "\n".join(f"[{fmt_ts(sg['start'])}] {sg['text']}" for sg in segs_en) + "\n", encoding="utf-8")
 
     data = {
         "title": s.title, "source": s.webpage_url or s.input, "source_kind": s.kind,
         "duration_seconds": s.duration, "covered": [start, end], "uploader": s.uploader,
         "frame_mode": args.mode_used, "speech_source": how,
+        "speech_language": tr.get("lang") or None, "speech_language_probability": tr.get("lang_prob"),
         "chapters": s.chapters, "description": s.description,
         "frames": [{"t": f["t"], "time": fmt_ts(f["t"]), "file": rel(f["file"])} for f in frames],
         "contact_sheets": [rel(p) for p in sheets],
         "transcript": segs,
+        "transcript_en": segs_en,
         "timeline": [{"t": it["t"], "time": fmt_ts(it["t"]), "until": it["until"],
-                      "frame": rel(it["frame"]), "speech": it["speech"]} for it in timeline],
+                      "frame": rel(it["frame"]), "speech": it["speech"], "speech_en": it["speech_en"]}
+                     for it in timeline],
     }
     (out / "timeline.json").write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     return data
@@ -690,9 +814,20 @@ def main() -> None:
     ap.add_argument("--width", type=int, default=1000, help="Max frame width in px (default 1000)")
     ap.add_argument("--start", default=None, help="Start time (sec, mm:ss or hh:mm:ss)")
     ap.add_argument("--end", default=None, help="End time")
-    ap.add_argument("--transcript", choices=["auto", "captions", "whisper", "none"], default="auto")
-    ap.add_argument("--lang", default=None, help="Language code for captions/Whisper, e.g. en, te, hi")
-    ap.add_argument("--whisper-model", default="base", help="Whisper model size: tiny, base, small, medium...")
+    ap.add_argument("--transcript", choices=["auto", "audio", "captions", "whisper", "none"], default="auto",
+                    help="auto = creator captions, else LISTEN to the audio, else site auto-captions; "
+                         "audio = always listen (best for non-English or mixed languages); "
+                         "captions = never listen (fastest); whisper = same as audio")
+    ap.add_argument("--lang", default=None,
+                    help="Spoken language code (en, te, hi, ta, kn, ml, es, ...). Default: detect automatically")
+    ap.add_argument("--translate", action="store_true",
+                    help="Also translate the speech to English (when the audio is listened to and is not English)")
+    ap.add_argument("--whisper-model", default="auto",
+                    help="Whisper size: tiny, base, small, medium, large-v3, or auto "
+                         "(base for English, --whisper-model-other for other languages)")
+    ap.add_argument("--whisper-model-other", default="small",
+                    help="Model used by --whisper-model auto for non-English speech (default small; "
+                         "medium or large-v3 are more accurate for Indian languages but slower)")
     ap.add_argument("--no-sheets", action="store_true", help="Do not build contact sheets")
     ap.add_argument("--sheet-size", type=int, default=6, help="Frames per contact sheet (default 6)")
     ap.add_argument("--max-height", type=int, default=720, help="Highest stream resolution to request (default 720)")
@@ -759,10 +894,11 @@ def main() -> None:
         log("No frames could be extracted (audio-only stream, DRM, or the server refused range requests).")
 
     effective_end = end if end is not None else (frames[-1]["t"] if frames else start)
-    segs, how = get_transcript(s, args, out, start, end)
+    tr = get_transcript(s, args, out, start, end)
+    segs, how = tr["segs"], tr["how"]
 
     sheets = [] if args.no_sheets else make_sheets(frames, out / "sheets", args.sheet_size, cols=3 if args.sheet_size > 4 else 2)
-    data = write_outputs(out, s, frames, segs, how, sheets, start, effective_end, args)
+    data = write_outputs(out, s, frames, tr, sheets, start, effective_end, args)
 
     summary = {
         "ok": bool(frames or segs),
@@ -773,7 +909,9 @@ def main() -> None:
         "frames": len(frames),
         "contact_sheets": len(sheets),
         "speech_source": how,
+        "speech_language": tr.get("lang") or None,
         "speech_segments": len(segs),
+        "english_translation_segments": len(tr["segs_en"]),
     }
     print(json.dumps(summary, indent=2, ensure_ascii=False))
 
