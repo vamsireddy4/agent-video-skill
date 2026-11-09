@@ -1,6 +1,6 @@
 ---
 name: video-watch
-description: Watch a video from any URL (YouTube, Vimeo, X, Instagram, TikTok, news sites, direct .mp4/.m3u8 links) or a local file by streaming it into timestamped key frames plus a transcript, then answer questions about what is shown and said. Use when the user shares a video link or file and asks to summarize it, explain it, find a moment, read on-screen text or slides, or compare what was said with what was shown.
+description: Watch a video from any URL (YouTube, Vimeo, X, Instagram, TikTok, news sites, direct .mp4/.m3u8 links) or a local file by streaming it into timestamped key frames plus a transcript, then answer questions about what is shown and said, or learn the method a tutorial teaches and save it as a new reusable Agent Skill. Use when the user shares a video link or file and asks to summarize it, explain it, find a moment, read on-screen text, code or slides, compare what was said with what was shown, or says "learn this", "make a skill from this video" or "turn this tutorial into a skill".
 ---
 
 # Video watch
@@ -72,6 +72,21 @@ Useful options:
   metadata only, and suggest installing faster-whisper.
 - For long videos, summarize section by section (chapters, or every 10 minutes) before giving an
   overall summary.
+
+## Learn a skill from a video
+
+When the user wants you to learn what a video teaches and keep it as a skill ("watch this
+tutorial and make a skill out of it"), follow `references/video-to-skill.md`. In short:
+
+1. Watch twice: an overview pass, then dense passes (`--mode interval --interval 2 --width 1600`)
+   on the parts where code, commands or settings are on screen.
+2. Extract the goal, prerequisites, ordered steps with exact commands, key decisions with their
+   reasons, mistakes and fixes, and how success is checked.
+3. Create the new skill with `scripts/scaffold_skill.py <name> --description "..." --source <url>
+   --agent <claude|codex|gemini|cursor|agents>` and write the method in your own words, with
+   runnable code in its `scripts/` folder.
+4. Validate with `scripts/scaffold_skill.py --validate <folder>`, run what you safely can, and
+   report what was and was not verified.
 
 ## 5. Limits and rules
 

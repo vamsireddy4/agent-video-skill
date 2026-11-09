@@ -7,6 +7,8 @@ then looks at the frames with its own vision and reads the speech.
 
 - No video is saved to disk; it is streamed.
 - No AI API key is needed; the skill calls no model. Whatever agent runs it does the watching.
+- It can also **learn from a video**: watch a tutorial and save what it teaches as a new,
+  reusable skill (see "Learn a skill from a video" below).
 - Same folder works in Claude Code, OpenAI Codex, Gemini CLI, Cursor, GitHub Copilot and other
   tools that support the open Agent Skills (`SKILL.md`) format.
 
@@ -34,8 +36,11 @@ video-watch/
 ├── SKILL.md               instructions the agent reads
 ├── README.md              this file
 ├── requirements.txt
+├── references/
+│   └── video-to-skill.md  step-by-step guide for learning a skill from a video
 └── scripts/
-    └── video_watch.py     the streaming + frames + transcript tool
+    ├── video_watch.py     the streaming + frames + transcript tool
+    └── scaffold_skill.py  creates and validates new skill folders
 ```
 
 ## 1. Install the requirements
@@ -103,6 +108,40 @@ Output:
 | `out/sheets/*.jpg` | Contact sheets: six frames per image with timestamps, for agents with image limits |
 | `out/transcript.txt` | Speech only, with timestamps |
 | `out/timeline.json` | Everything above, machine-readable |
+
+## Learn a skill from a video
+
+Ask your agent something like:
+
+- "Watch this Docker tutorial and make a skill out of it: <link>"
+- "Learn the deployment steps from this video and save them as a Codex skill"
+
+The agent then:
+
+1. Watches an overview pass, then dense passes (`--mode interval --interval 2`) where code or
+   commands are on screen, so short-lived code is not missed.
+2. Pulls out the goal, prerequisites, ordered steps with exact commands, key decisions with their
+   reasons, mistakes and fixes, and how to check it worked.
+3. Creates the new skill folder in the right agent's skills directory:
+   ```bash
+   python3 scripts/scaffold_skill.py docker-multistage-deploy \
+       --description "Build and deploy ... Use when ..." \
+       --source "https://youtu.be/..." --source-title "Video title" --agent claude
+   ```
+4. Writes the method in its own words (with runnable scripts), validates it, runs what it safely
+   can, and reports what was not verified.
+
+Validate any skill folder:
+
+```bash
+python3 scripts/scaffold_skill.py --validate ~/.claude/skills/docker-multistage-deploy
+```
+
+`--agent` accepts `claude`, `codex`, `gemini`, `cursor`, `copilot` and `agents` (the shared
+`~/.agents/skills` folder); `--project` uses the project-level folder, and `--dir <path>` saves
+anywhere, such as a git repo. Learned skills keep a Source section with the video link so the
+creator gets credit. Code read from video frames can contain small errors, which is why the
+workflow tests before it calls a skill done.
 
 ## How it works
 
