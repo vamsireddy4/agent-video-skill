@@ -79,6 +79,120 @@ def need(tool: str, hint: str) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# 0. Setup: shared environment, ffmpeg and yt-dlp discovery, --check
+# --------------------------------------------------------------------------- #
+
+HOME_DIR = Path(os.environ.get("VIDEO_WATCH_HOME", Path.home() / ".video-watch"))
+VENV_DIR = HOME_DIR / "venv"
+VENV_PY = VENV_DIR / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+INSTALL_HINT = ("Run the one-time setup: python3 <video-watch folder>/install.py --deps-only "
+                "(no admin rights needed)")
+
+FFMPEG: str | None = None
+FFPROBE: str | None = None
+
+
+def use_shared_env() -> None:
+    """If install.py created ~/.video-watch/venv, re-run this script with that Python so the
+    packages it installed (yt-dlp, Pillow, Whisper, bundled ffmpeg) are used automatically."""
+    if os.environ.get("VIDEO_WATCH_NO_VENV") or not VENV_PY.exists():
+        return
+    try:
+        # Compare prefixes, not executables: a venv's python is often a symlink to the system one.
+        if Path(sys.prefix).resolve() == VENV_DIR.resolve():
+            return
+    except OSError:
+        return
+    env = dict(os.environ, VIDEO_WATCH_NO_VENV="1")
+    cmd = [str(VENV_PY), str(Path(__file__).resolve()), *sys.argv[1:]]
+    if os.name == "nt":
+        sys.exit(subprocess.call(cmd, env=env))
+    os.execve(str(VENV_PY), cmd, env)
+
+
+def find_ffmpeg() -> tuple[str | None, str | None]:
+    """System ffmpeg first; otherwise the copy bundled with the imageio-ffmpeg pip package.
+    ffprobe is optional (the script can read the same facts from ffmpeg)."""
+    ff = shutil.which("ffmpeg")
+    if not ff:
+        try:
+            import imageio_ffmpeg
+            bundled = sorted((Path(imageio_ffmpeg.__file__).parent / "binaries").glob("ffmpeg*"))
+            bundled = [b for b in bundled if b.is_file() and not b.name.endswith((".md", ".py", ".txt"))]
+            ff = str(bundled[-1]) if bundled else imageio_ffmpeg.get_ffmpeg_exe()
+        except Exception:
+            ff = None
+    fp = shutil.which("ffprobe")
+    if not fp and ff:
+        sib = Path(ff).with_name("ffprobe.exe" if os.name == "nt" else "ffprobe")
+        fp = str(sib) if sib.exists() else None
+    return ff, fp
+
+
+def ytdlp_cmd() -> list[str] | None:
+    try:
+        import yt_dlp  # noqa: F401
+        return [sys.executable, "-m", "yt_dlp"]
+    except ImportError:
+        exe = shutil.which("yt-dlp")
+        return [exe] if exe else None
+
+
+def ffmpeg_info(url_args: list[str]) -> str:
+    """'ffmpeg -i' prints duration and streams to stderr; used when ffprobe is missing."""
+    try:
+        r = run([FFMPEG, "-hide_banner", "-nostdin"] + url_args, timeout=90)
+        return r.stderr or ""
+    except Exception:
+        return ""
+
+
+def check_setup() -> int:
+    ff, fp = find_ffmpeg()
+    try:
+        import yt_dlp
+        ytv = yt_dlp.version.__version__
+    except ImportError:
+        ytv = None
+    try:
+        import PIL
+        pil = PIL.__version__
+    except ImportError:
+        pil = None
+    try:
+        import faster_whisper  # noqa: F401
+        wh = "faster-whisper"
+    except ImportError:
+        try:
+            import whisper  # noqa: F401
+            wh = "openai-whisper"
+        except ImportError:
+            wh = None
+    js = shutil.which("deno") or shutil.which("node") or shutil.which("bun")
+    rows = [
+        ("ffmpeg", ff, True, "needed to read any video"),
+        ("ffprobe", fp, False, "optional; ffmpeg is used instead"),
+        ("yt-dlp", ytv, True, "needed for web pages (YouTube, Vimeo, X, ...)"),
+        ("Pillow", pil, False, "contact sheets and duplicate-frame removal"),
+        ("Whisper", wh, False, "listening to the audio in ~100 languages"),
+        ("JS runtime", js, False, "recent yt-dlp may need deno or node for YouTube"),
+    ]
+    print(f"video-watch setup check (Python {sys.version.split()[0]} at {sys.executable})")
+    print(f"shared environment: {VENV_DIR} ({'found' if VENV_PY.exists() else 'not created'})")
+    missing_required = False
+    for name, val, required, why in rows:
+        mark = "OK  " if val else ("MISS" if required else "warn")
+        if not val and required:
+            missing_required = True
+        print(f"  [{mark}] {name:<11} {val or '-':<40} {why}")
+    if missing_required or not wh:
+        print("\n" + INSTALL_HINT)
+    else:
+        print("\nReady.")
+    return 1 if missing_required else 0
+
+
+# --------------------------------------------------------------------------- #
 # 1. Resolve the source into a stream (nothing is downloaded)
 # --------------------------------------------------------------------------- #
 
@@ -112,7 +226,9 @@ class Source:
 
 
 def ytdlp_base(args) -> list[str]:
-    cmd = ["yt-dlp", "--no-warnings", "--no-playlist"]
+    cmd = (ytdlp_cmd() or ["yt-dlp"]) + ["--no-warnings", "--no-playlist"]
+    if FFMPEG:
+        cmd += ["--ffmpeg-location", FFMPEG]
     if args.cookies_from_browser:
         cmd += ["--cookies-from-browser", args.cookies_from_browser]
     if args.cookies:
@@ -142,7 +258,8 @@ def resolve_source(src: str, args) -> Source:
         return s
 
     # A web page: ask yt-dlp where the real stream is (no download).
-    need("yt-dlp", "Install it with: pip install -U yt-dlp")
+    if not ytdlp_cmd():
+        fail("yt-dlp is needed for web page links. " + INSTALL_HINT)
     s.kind = "site"
     fmt = (f"bv*[height<={args.max_height}]+ba/b[height<={args.max_height}]/bv*+ba/b")
     cmd = ytdlp_base(args) + ["-J", "-f", fmt, src]
@@ -193,14 +310,17 @@ def resolve_source(src: str, args) -> Source:
 def probe_duration(s: Source) -> float | None:
     if s.duration:
         return float(s.duration)
-    cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json"]
-    cmd += s.ffmpeg_input(s.video_url)[:-2] + [s.video_url]
-    try:
-        r = run(cmd, timeout=90)
-        d = json.loads(r.stdout or "{}").get("format", {}).get("duration")
-        return float(d) if d not in (None, "N/A") else None
-    except Exception:
-        return None
+    if FFPROBE:
+        cmd = [FFPROBE, "-v", "error", "-show_entries", "format=duration", "-of", "json"]
+        cmd += s.ffmpeg_input(s.video_url)[:-2] + [s.video_url]
+        try:
+            r = run(cmd, timeout=90)
+            d = json.loads(r.stdout or "{}").get("format", {}).get("duration")
+            return float(d) if d not in (None, "N/A") else None
+        except Exception:
+            return None
+    m = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", ffmpeg_info(s.ffmpeg_input(s.video_url)))
+    return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3)) if m else None
 
 
 # --------------------------------------------------------------------------- #
@@ -210,7 +330,7 @@ def probe_duration(s: Source) -> float | None:
 def grab_frame(s: Source, t: float, out_file: Path, width: int) -> bool:
     """Seek inside the stream and grab one frame. Over HTTP this uses range
     requests, so only a small piece of the video is fetched."""
-    cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{t:.3f}"]
+    cmd = [FFMPEG, "-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{t:.3f}"]
     cmd += s.ffmpeg_input(s.video_url)
     cmd += ["-frames:v", "1", "-vf", f"scale='min({width},iw)':-2", "-q:v", "3", str(out_file)]
     try:
@@ -277,7 +397,7 @@ def frames_by_scene(s: Source, start: float, end: float | None, threshold: float
     """One pass through the stream; keep a frame only when the picture changes.
     The stream is read but never written to disk."""
     tmp_pattern = frames_dir / "scene_%05d.jpg"
-    cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-y"]
+    cmd = [FFMPEG, "-nostdin", "-hide_banner", "-y"]
     if start:
         cmd += ["-ss", f"{start:.3f}"]
     cmd += s.ffmpeg_input(s.video_url)
@@ -457,18 +577,24 @@ def captions_from_site(s: Source, args, work: Path, which: str) -> tuple[list[di
 
 def captions_embedded(s: Source, start: float, end: float | None) -> tuple[list[dict], str, str]:
     """Subtitle track inside the file/stream itself (common in .mkv/.mp4)."""
-    cmd = ["ffprobe", "-v", "error", "-select_streams", "s", "-show_entries", "stream=index:stream_tags=language",
-           "-of", "csv=p=0"]
-    cmd += s.ffmpeg_input(s.video_url)[:-2] + [s.video_url]
-    try:
-        r = run(cmd, timeout=60)
-    except subprocess.TimeoutExpired:
-        return [], "", ""
-    if not r.stdout.strip():
-        return [], "", ""
-    first = r.stdout.strip().splitlines()[0].split(",")
-    lang = first[1] if len(first) > 1 and first[1] not in ("", "und") else ""
-    cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error"] + s.ffmpeg_input(s.video_url)
+    if FFPROBE:
+        cmd = [FFPROBE, "-v", "error", "-select_streams", "s", "-show_entries",
+               "stream=index:stream_tags=language", "-of", "csv=p=0"]
+        cmd += s.ffmpeg_input(s.video_url)[:-2] + [s.video_url]
+        try:
+            r = run(cmd, timeout=60)
+        except subprocess.TimeoutExpired:
+            return [], "", ""
+        if not r.stdout.strip():
+            return [], "", ""
+        first = r.stdout.strip().splitlines()[0].split(",")
+        lang = first[1] if len(first) > 1 and first[1] not in ("", "und") else ""
+    else:
+        m = re.search(r"Stream #\d+:\d+(?:\[\w+\])?(?:\((\w+)\))?: Subtitle:", ffmpeg_info(s.ffmpeg_input(s.video_url)))
+        if not m:
+            return [], "", ""
+        lang = m.group(1) if m.group(1) and m.group(1) != "und" else ""
+    cmd = [FFMPEG, "-nostdin", "-hide_banner", "-loglevel", "error"] + s.ffmpeg_input(s.video_url)
     cmd += ["-map", "0:s:0", "-f", "webvtt", "-"]
     try:
         r = run(cmd, timeout=300)
@@ -495,7 +621,7 @@ def whisper_engine() -> str | None:
 def stream_audio(s: Source, args, work: Path, start: float, end: float | None) -> Path | None:
     """Stream only the audio track into a small 16 kHz mono WAV (deleted after use)."""
     wav = work / "_audio.wav"
-    cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y"]
+    cmd = [FFMPEG, "-nostdin", "-hide_banner", "-loglevel", "error", "-y"]
     if start:
         cmd += ["-ss", f"{start:.3f}"]
     cmd += s.ffmpeg_input(s.audio_url)
@@ -800,9 +926,11 @@ def write_outputs(out: Path, s: Source, frames, tr: dict, sheets, start, end, ar
 # --------------------------------------------------------------------------- #
 
 def main() -> None:
+    use_shared_env()
     ap = argparse.ArgumentParser(
         description="Stream a video (any URL or local file) into key frames + timestamped speech for an AI agent.")
-    ap.add_argument("source", help="Video page URL, direct .mp4/.m3u8 URL, or local file path")
+    ap.add_argument("source", nargs="?", help="Video page URL, direct .mp4/.m3u8 URL, or local file path")
+    ap.add_argument("--check", action="store_true", help="Check that everything needed is installed, then exit")
     ap.add_argument("-o", "--out", default=None, help="Output folder (default: ./video-watch-<title>)")
     ap.add_argument("--mode", choices=["auto", "scene", "interval"], default="auto",
                     help="scene = keep frames where the picture changes; interval = one frame every N seconds; "
@@ -838,8 +966,14 @@ def main() -> None:
     ap.add_argument("--timeout", type=float, default=1800, help="Max seconds for a full-stream pass (scene scan / audio)")
     args = ap.parse_args()
 
-    need("ffmpeg", "Install ffmpeg: https://ffmpeg.org/download.html (brew install ffmpeg / winget install ffmpeg / apt install ffmpeg)")
-    need("ffprobe", "ffprobe ships with ffmpeg.")
+    if args.check:
+        sys.exit(check_setup())
+    if not args.source:
+        ap.error("give a video URL or file (or --check)")
+    global FFMPEG, FFPROBE
+    FFMPEG, FFPROBE = find_ffmpeg()
+    if not FFMPEG:
+        fail("ffmpeg was not found. " + INSTALL_HINT)
 
     s = resolve_source(args.source, args)
     s.duration = probe_duration(s)
