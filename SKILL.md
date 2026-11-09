@@ -1,6 +1,6 @@
 ---
 name: video-watch
-description: Watch a video from any URL (YouTube, Vimeo, X, Instagram, TikTok, news sites, direct .mp4/.m3u8 links) or a local file by streaming it into timestamped key frames plus a transcript, then answer questions about what is shown and said, or learn the method a tutorial teaches and save it as a new reusable Agent Skill. Use when the user shares a video link or file and asks to summarize it, explain it, find a moment, read on-screen text, code or slides, compare what was said with what was shown, or says "learn this", "make a skill from this video" or "turn this tutorial into a skill".
+description: Watch a video from any URL (YouTube, Vimeo, X, Instagram, TikTok, news sites, direct .mp4/.m3u8 links) or a local file by streaming it into timestamped key frames plus a transcript, then answer questions about what is shown and said, or learn the method a tutorial teaches and save it as a new reusable Agent Skill. Use when the user shares a video link or file and asks to summarize it, explain it, find a moment, read on-screen text, code or slides, compare what was said with what was shown, or says "learn this", "make a skill from this video" or "turn this tutorial into a skill". Invoked as "/video-watch LINK" to watch, or "/video-watch learn LINK" to create a skill.
 ---
 
 # Video watch
@@ -9,6 +9,27 @@ You cannot play video directly, so this skill turns a video into things you can 
 key frames (pictures, named by timestamp) and the speech (captions or Whisper transcript), lined up
 on one timeline. The video is streamed, never saved to disk. No other AI model is called: you look
 at the frames with your own image viewing and read the transcript yourself.
+
+## Commands
+
+Look at the words that came with the command (or the user's message) and pick the mode:
+
+| What the user typed | Mode |
+|---|---|
+| `/video-watch <link or file>` | Watch: summarize with timestamps (sections 1 to 4) |
+| `/video-watch <link> <question>` | Watch: answer the question (sections 1 to 4) |
+| `/video-watch learn <link or file> [more links] [skill-name] [--agent codex]` | Learn: watch, then create a new skill (section "Learn a skill from a video") |
+| Plain words like "learn this video", "make a skill from this" | Learn |
+
+`skill` works the same as `learn` (`/video-watch skill <link>`). Tools that invoke skills with a
+different prefix, such as `$video-watch`, use the same words after it.
+
+In learn mode, carry the whole job through without stopping: watch, extract, create, validate, test,
+report. Ask a question only when the goal is truly unclear (for example a 2-hour course with many
+unrelated topics). If no skill name is given, choose a short task name such as
+`docker-multistage-deploy`. If no `--agent` is given, save it for the agent you are running in
+(Claude Code: `claude`, Codex: `codex`, Gemini CLI: `gemini`, Cursor: `cursor`, GitHub Copilot:
+`copilot`); if you cannot tell, use `agents` (the shared `~/.agents/skills` folder) and say so.
 
 ## 1. Check the tools (once per machine)
 

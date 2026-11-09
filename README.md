@@ -84,7 +84,21 @@ On Windows, use `python` instead of `python3` and a path such as
 
 ## 3. Use it
 
-Just ask your agent, for example:
+### Commands
+
+| Command | What happens |
+|---|---|
+| `/video-watch <link or file>` | Watches the video and summarizes it with timestamps |
+| `/video-watch <link> <question>` | Watches and answers your question |
+| `/video-watch learn <link>` | Watches, learns the method, and **creates a new skill** for your agent |
+| `/video-watch learn <link> docker-deploy --agent codex` | Same, with your own skill name and target agent |
+
+`skill` works the same as `learn`. In tools that use another prefix (for example `$video-watch`),
+type the same words after it. Learn mode runs end to end: watch, extract, create, validate, test,
+report.
+
+### Or just ask
+
 
 - "Watch https://www.youtube.com/watch?v=... and summarize it with timestamps"
 - "What was on the slide when they talked about pricing in this video: <link>"
@@ -111,7 +125,7 @@ Output:
 
 ## Learn a skill from a video
 
-Ask your agent something like:
+Type `/video-watch learn <link>`, or ask your agent something like:
 
 - "Watch this Docker tutorial and make a skill out of it: <link>"
 - "Learn the deployment steps from this video and save them as a Codex skill"
