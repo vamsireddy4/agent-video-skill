@@ -1,5 +1,6 @@
 yt-dlp>=2025.1.1
 pillow>=10.0
 imageio-ffmpeg>=0.5  # bundled ffmpeg when the system has none
+numpy>=1.21  # sound, music and tone analysis
 # Listening to the audio in ~100 languages (recommended)
 faster-whisper>=1.0

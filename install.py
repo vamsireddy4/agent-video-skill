@@ -39,7 +39,7 @@ from pathlib import Path
 REPO = os.environ.get("VIDEO_WATCH_REPO", "https://github.com/vamsireddy4/agent-video-skill")
 BRANCH = "main"
 SKILL = "video-watch"
-PACKAGES = ["yt-dlp", "pillow", "faster-whisper", "imageio-ffmpeg"]
+PACKAGES = ["yt-dlp", "pillow", "numpy", "faster-whisper", "imageio-ffmpeg"]
 MODELS = ["base", "small"]
 
 HOME = Path.home()

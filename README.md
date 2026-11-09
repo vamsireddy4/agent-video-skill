@@ -173,6 +173,7 @@ Output:
 |---|---|
 | `out/timeline.md` | Read this first: each key frame with what was said while it was on screen |
 | `out/frames/*.jpg` | Key frames, named by timestamp (`frame_0003_00h04m12s.jpg`) |
+| `out/motion/*.jpg` | Motion strips: the fast parts, frame by frame |
 | `out/sheets/*.jpg` | Contact sheets: six frames per image with timestamps, for agents with image limits |
 | `out/transcript.txt` | Speech only, with timestamps, in the spoken language |
 | `out/transcript_en.txt` | English translation of the speech (with `--translate`) |
@@ -232,20 +233,29 @@ Listening covers speech only; music and sound effects are not described.
 
 1. **Find the stream.** Local files and direct media links go straight to ffmpeg. Web pages go
    through `yt-dlp -J`, which finds the real stream address without downloading.
-2. **Key frames.** For videos up to 20 minutes, ffmpeg streams once and keeps a frame only when
-   the picture changes (scene detection), then fills large gaps and drops duplicates. Longer
-   videos use evenly spaced frames, grabbed by seeking inside the stream, so only small pieces
-   are fetched.
+2. **Every frame read, the right frames shown.** One fast, low-resolution pass reads every frame
+   (about 15,000 frames of a 10-minute video in under 20 seconds) and measures scene changes,
+   instant content changes and motion. Full-size frames are then grabbed only at scene changes,
+   new slides or code lines, the peak of each fast-motion stretch, and evenly spread points so no
+   long stretch goes unseen. Fast stretches also get a **motion strip**: up to 18 frames at about
+   8 per second in one image, so the agent can follow the movement. `--quick` skips the scan.
 3. **Speech.** Creator-uploaded captions or subtitle tracks inside the file first, then Whisper
    listening to the streamed audio (language detected automatically, optional English
    translation), then the site's auto-captions as a last resort.
-4. **Timeline.** Frames and speech are matched by timestamp and written to `timeline.md`.
+4. **Sound and tone.** The same audio stream is measured for silence, likely music, noise / crowd
+   / applause / effects and sudden loud sounds, and each spoken line gets tone cues from its
+   loudness, pitch and speed compared with the rest of the video (`[loud, higher pitch, fast]`).
+5. **Timeline.** Frames, motion, sounds and speech are matched by timestamp and written to
+   `timeline.md`. Pictures and sound are processed at the same time to keep it fast.
 
 ## Limits
 
 - DRM services (Netflix, Prime Video, Hotstar, Disney+) cannot be watched, by design.
-- Frames are snapshots. Fast action between frames can be missed; re-run on a short window with
-  `--mode interval --interval 1` for detail.
+- The AI looks at selected frames and motion strips, not all of them: every frame is measured
+  locally, but sending thousands of images to a model would be slow and expensive. For a closer
+  look at one moment use `--start/--end` with `--motion-fps 15 --motion-frames 30`.
+- Sound and tone labels come from measurements (loudness, pitch, spectrum), not from a sound
+  recognition model: "likely music" and "loud, higher pitch" are hints, not certainties.
 - Login-only videos need `--cookies-from-browser <browser>` and should only be used with your
   own account.
 - Sites change; if a site stops working, update yt-dlp: `pip install -U yt-dlp`. YouTube may also

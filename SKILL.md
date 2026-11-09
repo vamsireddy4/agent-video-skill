@@ -99,6 +99,9 @@ Useful options:
 |---|---|
 | Only part of the video | `--start 12:30 --end 15:00` |
 | More detail on a moment | `--start 4:00 --end 4:30 --mode interval --interval 1` |
+| Denser motion strips for very fast action | `--motion-fps 15 --motion-frames 30` |
+| Fastest run (skip the every-frame scan) | `--quick` |
+| Speech only, no music / sound / tone analysis | `--no-audio-analysis` |
 | More or fewer frames | `--max-frames 60`, or `--scene-threshold 0.2` (lower = more frames) |
 | Long video (over 20 min) | Defaults to evenly spaced frames; raise `--max-frames` if your image budget allows |
 | Always listen to the audio (best for non-English, mixed languages like Tenglish/Hinglish, or bad captions) | `--transcript audio` |
@@ -131,23 +134,42 @@ captions when listening is not possible. `--transcript audio` always listens.
 
 ## 3. Watch it
 
-1. Read `timeline.md` first. It has the title, chapters, page description, and every key frame
-   with the speech that happened while that frame was on screen.
+By default the script **reads every frame** of the video locally (one fast, low-resolution pass)
+to measure motion and changes, then picks the frames worth your attention: every scene change,
+every instant content change (new slide, new code line), the peak of every fast-motion stretch,
+and enough evenly spread frames that no long stretch goes unseen. Pictures and sound are processed
+at the same time. A 10-minute video usually takes well under a minute.
+
+1. Read `timeline.md` first. It has the title, chapters, page description, an "Activity over
+   time" line (calm, moderate, busy), and every key frame with what was said on screen at that
+   moment. Lines marked `MOTION` and `SOUND` sit in the block where they happen.
 2. Look at the pictures. Open the contact sheets in `sheets/` first: each one packs about six
-   frames with the timestamp in the corner, so you see the whole video in a few images. Then open
-   single files in `frames/` when you need detail, such as reading small text, a chart, or code.
-   If your image budget is small, prefer contact sheets; if you can view many images, open the
-   individual frames.
-3. Use `timeline.json` if you need to process the data programmatically.
+   frames with the timestamp in the corner. Then open single files in `frames/` when you need
+   detail, such as reading small text, a chart, or code.
+3. **Fast motion:** for each stretch listed under "Fast motion", open its strip in `motion/`. A
+   strip shows up to 18 frames from that stretch (about 8 per second), left to right and top to
+   bottom, each with its time, so you can follow movement: what moved, which way, what happened.
+4. **Sounds and music:** "Sounds and music" lists silence, likely music or tonal sound, noise /
+   crowd / applause / effects, sudden loud sounds, and sound cues Whisper heard (for example
+   "heard: applause"). These come from loudness and spectrum measurements, so name them as likely
+   ("there seems to be music from 0:05 to 0:10"), not as certain facts.
+5. **Tone cues:** speech lines may end with brackets such as `[very loud / shouting, higher pitch,
+   fast]`, `[quiet / soft, slow]` or `[animated (pitch moves a lot)]`. They compare each line with
+   the rest of the video. Combine them with the words and the pictures before saying how someone
+   felt, and say it is an inference ("she sounds excited: louder, higher and faster here").
+6. Use `timeline.json` if you need the numbers (motion scores, sound levels, timings).
+
+If your image budget is small, look at contact sheets and motion strips only. Use `--quick` to
+skip the every-frame scan when speed matters more than motion detail.
 
 ## 4. Answer (watch-only mode)
 
 - Cite timestamps like `[04:12]` so the user can jump to the moment.
 - Say whether something was shown (from a frame) or said (from the transcript). Combining them is
   the point: "At [04:12], while explaining pricing, the slide shows three plans: ...".
-- Frames are snapshots, not continuous video. If the user asks about something that could happen
-  between two frames (fast action, a quick gesture), say so and re-run on that window with
-  `--mode interval --interval 1` instead of guessing.
+- Every frame was scanned, so fast action is not silently missed: check "Fast motion" and its
+  strips. For an even closer look at one moment, re-run on that window, for example
+  `--start 4:00 --end 4:10 --motion-fps 15 --motion-frames 30`, instead of guessing.
 - If the speech source is "none found", tell the user your answer is based on visuals and page
   metadata only, and suggest installing faster-whisper so the audio can be listened to.
 - Answer in the language the user writes in, even when the video is in another language.
