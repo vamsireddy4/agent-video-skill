@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 300" width="1000" height="300" role="img" aria-label="How video-watch works: a video link is read frame by frame and listened to, packed into a timeline, and your AI agent uses it to answer or to create a new skill">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M1 1L9 5L1 9" fill="none" stroke="#6B7280" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <style>
+      .t{font:600 17px -apple-system,"Segoe UI",Helvetica,Arial,sans-serif}
+      .s{font:400 13px -apple-system,"Segoe UI",Helvetica,Arial,sans-serif}
+      .ln{stroke:#9CA3AF;stroke-width:1.6;fill:none}
+    </style>
+  </defs>
+  <rect x="0" y="0" width="1000" height="300" rx="16" fill="#FFFFFF"/>
+
+  <!-- 1 input -->
+  <rect x="20" y="110" width="170" height="80" rx="12" fill="#F3F4F6" stroke="#D1D5DB"/>
+  <text class="t" x="105" y="145" text-anchor="middle" fill="#111827">Any video link</text>
+  <text class="s" x="105" y="168" text-anchor="middle" fill="#6B7280">YouTube, X, .mp4, file</text>
+
+  <!-- 2 sees / hears -->
+  <rect x="225" y="35" width="175" height="80" rx="12" fill="#EEEDFE" stroke="#AFA9EC"/>
+  <text class="t" x="312" y="70" text-anchor="middle" fill="#3C3489">Sees every frame</text>
+  <text class="s" x="312" y="93" text-anchor="middle" fill="#534AB7">slides, code, fast motion</text>
+  <rect x="225" y="185" width="175" height="80" rx="12" fill="#E1F5EE" stroke="#5DCAA5"/>
+  <text class="t" x="312" y="220" text-anchor="middle" fill="#085041">Hears the audio</text>
+  <text class="s" x="312" y="243" text-anchor="middle" fill="#0F6E56">speech, music, tone</text>
+
+  <!-- 3 package -->
+  <rect x="435" y="110" width="160" height="80" rx="12" fill="#F3F4F6" stroke="#D1D5DB"/>
+  <text class="t" x="515" y="145" text-anchor="middle" fill="#111827">Timeline</text>
+  <text class="s" x="515" y="168" text-anchor="middle" fill="#6B7280">pictures + words, timed</text>
+
+  <!-- 4 agent -->
+  <rect x="630" y="110" width="160" height="80" rx="12" fill="#111827"/>
+  <text class="t" x="710" y="145" text-anchor="middle" fill="#FFFFFF">Your AI agent</text>
+  <text class="s" x="710" y="168" text-anchor="middle" fill="#D1D5DB">Claude, Codex, Gemini</text>
+
+  <!-- 5 outputs -->
+  <rect x="825" y="35" width="155" height="80" rx="12" fill="#FAEEDA" stroke="#EF9F27"/>
+  <text class="t" x="902" y="70" text-anchor="middle" fill="#633806">Answers</text>
+  <text class="s" x="902" y="93" text-anchor="middle" fill="#854F0B">with timestamps</text>
+  <rect x="825" y="185" width="155" height="80" rx="12" fill="#FAEEDA" stroke="#EF9F27"/>
+  <text class="t" x="902" y="220" text-anchor="middle" fill="#633806">New skill</text>
+  <text class="s" x="902" y="243" text-anchor="middle" fill="#854F0B">learned from video</text>
+
+  <!-- arrows -->
+  <path class="ln" d="M190 140 C 205 140, 205 75, 222 75" marker-end="url(#a)"/>
+  <path class="ln" d="M190 160 C 205 160, 205 225, 222 225" marker-end="url(#a)"/>
+  <path class="ln" d="M400 75 C 418 75, 418 140, 432 140" marker-end="url(#a)"/>
+  <path class="ln" d="M400 225 C 418 225, 418 160, 432 160" marker-end="url(#a)"/>
+  <path class="ln" d="M595 150 L 627 150" marker-end="url(#a)"/>
+  <path class="ln" d="M790 140 C 805 140, 805 75, 822 75" marker-end="url(#a)"/>
+  <path class="ln" d="M790 160 C 805 160, 805 225, 822 225" marker-end="url(#a)"/>
+</svg>
