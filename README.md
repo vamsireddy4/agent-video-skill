@@ -17,13 +17,13 @@ computer, no API keys.
 **Mac / Linux**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/vamsireddy4/agent-video-skill/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/vamsireddy4/claude-watch/main/install.sh | sh
 ```
 
 **Windows (PowerShell)**
 
 ```powershell
-irm https://raw.githubusercontent.com/vamsireddy4/agent-video-skill/main/install.py | python -
+irm https://raw.githubusercontent.com/vamsireddy4/claude-watch/main/install.py | python -
 ```
 
 That's it. It finds your AI agents, installs everything they need (no admin password), and tells
@@ -105,7 +105,7 @@ It can add an English translation of every line.
 **Uninstall:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/vamsireddy4/agent-video-skill/main/install.sh | sh -s -- --uninstall
+curl -fsSL https://raw.githubusercontent.com/vamsireddy4/claude-watch/main/install.sh | sh -s -- --uninstall
 ```
 
 Skills you learned from videos are kept. Delete them yourself if you don't need them.
@@ -131,7 +131,7 @@ Skills you learned from videos are kept. Delete them yourself if you don't need 
 Clone into your agent's skills folder:
 
 ```bash
-git clone https://github.com/vamsireddy4/agent-video-skill ~/.claude/skills/video-watch
+git clone https://github.com/vamsireddy4/claude-watch ~/.claude/skills/video-watch
 ```
 
 | Agent | Folder |

@@ -3,9 +3,9 @@
 video-watch installer: one command sets up everything.
 
   macOS / Linux:
-    curl -fsSL https://raw.githubusercontent.com/vamsireddy4/agent-video-skill/main/install.py | python3 -
+    curl -fsSL https://raw.githubusercontent.com/vamsireddy4/claude-watch/main/install.py | python3 -
   Windows (PowerShell):
-    irm https://raw.githubusercontent.com/vamsireddy4/agent-video-skill/main/install.py | python -
+    irm https://raw.githubusercontent.com/vamsireddy4/claude-watch/main/install.py | python -
   From a clone:
     python3 install.py
 
@@ -36,7 +36,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-REPO = os.environ.get("VIDEO_WATCH_REPO", "https://github.com/vamsireddy4/agent-video-skill")
+REPO = os.environ.get("VIDEO_WATCH_REPO", "https://github.com/vamsireddy4/claude-watch")
 BRANCH = "main"
 SKILL = "video-watch"
 PACKAGES = ["yt-dlp", "pillow", "numpy", "faster-whisper", "imageio-ffmpeg"]

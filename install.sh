@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # video-watch installer for macOS / Linux.
-#   curl -fsSL https://raw.githubusercontent.com/vamsireddy4/agent-video-skill/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/vamsireddy4/claude-watch/main/install.sh | sh
 # or, from a clone:  sh install.sh
 set -e
 PY="$(command -v python3 || command -v python || true)"
@@ -12,4 +12,4 @@ DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd || echo "")"
 if [ -n "$DIR" ] && [ -f "$DIR/install.py" ] && [ -f "$DIR/SKILL.md" ]; then
   exec "$PY" "$DIR/install.py" "$@"
 fi
-curl -fsSL https://raw.githubusercontent.com/vamsireddy4/agent-video-skill/main/install.py | "$PY" - "$@"
+curl -fsSL https://raw.githubusercontent.com/vamsireddy4/claude-watch/main/install.py | "$PY" - "$@"
