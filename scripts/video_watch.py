@@ -1018,7 +1018,8 @@ def write_outputs(out: Path, s: Source, frames, tr: dict, sheets, start, end, ar
                 md.append(f"- MOTION {fmt_ts(sg['start'])}–{fmt_ts(sg['end'])} {sg['level']}"
                           + (f" → `{rel(sg['strip'])}`" if sg.get("strip") else ""))
         for e in events:
-            if (inside(e["start"]) or (it is timeline[0] and e["start"] < it["t"])) and e["type"] != "silence":
+            # a sound that starts up to 0.5 s before a frame belongs with that frame
+            if (inside(e["start"] + 0.5) or (it is timeline[0] and e["start"] + 0.5 < it["t"])) and e["type"] != "silence":
                 md.append(f"- SOUND {fmt_ts(e['start'])}–{fmt_ts(e['end'])} {e['type']}")
         if it["speech"]:
             for sg in it["speech"]:
