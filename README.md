@@ -125,9 +125,12 @@ python3 ~/.claude/skills/video-watch/scripts/scaffold_skill.py --list
 
 ## Merge several skills into one
 
-Learned 5 SEO skills from 5 SEO videos? **merge-skills** combines them into one SEO skill. The agent
-reads every skill in full, removes duplicates, keeps the unique tips, asks you about conflicts, and
-gives you one clean skill.
+Learned 5 SEO skills from 5 SEO videos? **merge-skills** turns them into one SEO skill, in two phases:
+
+1. **Learn:** the agent studies every skill in full, writes its own learning notes (the steps, the
+   reason behind each rule, how the skills fit into one workflow), and checks it really understood.
+2. **Create:** it writes one new skill from that understanding, not by gluing the old ones together.
+   No duplicates, unique tips kept, and it asks you when two skills disagree.
 
 Install it once (Claude Code):
 
@@ -138,7 +141,7 @@ cp -r skills/merge-skills ~/.claude/skills/merge-skills
 Then just ask:
 
 ```text
-Merge all my SEO skills into one.
+Learn from all my SEO skills and make one.
 ```
 
 Or name them: `Merge seo-keywords, seo-onpage, seo-content, seo-technical and seo-backlinks into one SEO skill.`
