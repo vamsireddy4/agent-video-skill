@@ -123,6 +123,29 @@ See every skill you have learned from videos:
 python3 ~/.claude/skills/video-watch/scripts/scaffold_skill.py --list
 ```
 
+## Merge several skills into one
+
+Learned 5 SEO skills from 5 SEO videos? **merge-skills** combines them into one SEO skill. The agent
+reads every skill in full, removes duplicates, keeps the unique tips, asks you about conflicts, and
+gives you one clean skill.
+
+Install it once (Claude Code):
+
+```bash
+cp -r skills/merge-skills ~/.claude/skills/merge-skills
+```
+
+Then just ask:
+
+```text
+Merge all my SEO skills into one.
+```
+
+Or name them: `Merge seo-keywords, seo-onpage, seo-content, seo-technical and seo-backlinks into one SEO skill.`
+
+The old skills are **not deleted automatically**. Save the merged skill first, then remove the old
+ones. Full guide: [skills/merge-skills/README.md](skills/merge-skills/README.md).
+
 ## Languages
 
 The AI listens to the audio, not just captions, in about **100 languages**: Telugu, Hindi, Tamil,
